@@ -11,7 +11,16 @@ require("dotenv").config();
 module.exports = {
     defaultNetwork: "hardhat",
     networks: {
-        hardhat: {},
+        hardhat: {
+            forking: {
+                url: "https://mainnet.hashio.io/api",
+            },
+        },
+        hedera_mainnet: {
+            url: "https://mainnet.hashio.io/api",
+            chainId: 295,
+            accounts: [process.env.DEPLOYER_WALLET],
+        },
     },
     solidity: {
         compilers: [
