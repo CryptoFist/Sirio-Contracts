@@ -13,6 +13,10 @@ interface ISFProtocolToken {
     /// @notice Get underlying balance of SFProtocol token.
     function getUnderlyingBalance() external view returns (uint256);
 
+    /// @notice Allow/Block supplying underlying token.
+    /// @dev Only owner can call this function.
+    function allowSupplyUnderlyingToken(bool _allow) external;
+
     /// @notice Supply underlying assets to lending pool.
     /// @param _underlyingAmount The amount of underlying asset.
     function supplyUnderlying(uint256 _underlyingAmount) external;
@@ -45,4 +49,18 @@ interface ISFProtocolToken {
     /// @dev Only owner can call this function and tokes will send to owner.
     /// @param _token The address of token to sweep.
     function sweepToken(address _token) external;
+
+    event SupplyingUnderlyingTokenAllowed(bool allowed);
+
+    event InterestAccrued(
+        uint256 cashPrior,
+        uint256 interestAccumulated,
+        uint256 totalBorrows
+    );
+
+    event UnderlyingSupplied(
+        address supplier,
+        uint256 underlyingAmount,
+        uint256 shareAmount
+    );
 }
