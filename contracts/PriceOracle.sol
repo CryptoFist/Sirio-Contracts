@@ -6,6 +6,7 @@ import "./interfaces/IUniswapV2Router.sol";
 import "./interfaces/IUniswapV2Factory.sol";
 import "./interfaces/IUniswapV2Pair.sol";
 import "./interfaces/IPriceOracle.sol";
+import "./interfaces/ISFProtocolToken.sol";
 
 interface IToken {
     function decimals() external view returns (uint8);
@@ -35,9 +36,10 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
     function getUnderlyingPrice(
         address _token
     ) external view returns (uint256) {
+        address underlyingToken = ISFProtocolToken(_token).underlyingToken();
         address pairAddress = IUniswapV2Factory(factory).getPair(
             baseToken,
-            _token
+            underlyingToken
         );
         if (pairAddress == address(0)) {
             return 0;
@@ -49,10 +51,10 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
         address token0 = IUniswapV2Pair(pairAddress).token0();
 
         uint256 baseReserve = token0 == baseToken ? reserve0 : reserve1;
-        uint256 tokenReserve = token0 == _token ? reserve0 : reserve1;
+        uint256 tokenReserve = token0 == underlyingToken ? reserve0 : reserve1;
 
         uint8 baseDecimal = IToken(baseToken).decimals();
-        uint8 tokenDecimal = IToken(_token).decimals();
+        uint8 tokenDecimal = IToken(underlyingToken).decimals();
 
         baseReserve = _scaleTo(baseReserve, baseDecimal, 18);
         tokenReserve = _scaleTo(tokenReserve, tokenDecimal, 18);
