@@ -4,6 +4,7 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,6 +17,7 @@ contract SFProtocolToken is
     ERC20Upgradeable,
     Ownable2StepUpgradeable,
     PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
     ISFProtocolToken
 {
     using SafeERC20 for IERC20;
@@ -35,7 +37,7 @@ contract SFProtocolToken is
     /// @notice The address of interestRateModel contract.
     address public interestRateModel;
 
-    /// @notice The address of marketPositionManager.
+    /// @inheritdoc ISFProtocolToken
     address public marketPositionManager;
 
     /// @notice The initialExchangeRate that will be applied for first time.
@@ -61,6 +63,9 @@ contract SFProtocolToken is
 
     /// @notice Accumulator of the total earned interest rate since the opening of the market
     uint256 public borrowIndex;
+
+    /// @notice Share of seized collateral that is added to reserves
+    uint256 public constant protocolSeizeShareMantissa = 2.8e16; //2.8%
 
     /// @notice 100% = 10000
     uint16 public FEERATE_FIXED_POINT = 10_000;
@@ -103,6 +108,11 @@ contract SFProtocolToken is
         address _account
     ) public view virtual override returns (uint256) {
         return accountBalance[_account];
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function getExchangeRateStored() external view override returns (uint256) {
+        return _exchangeRateStoredInternal();
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -198,13 +208,81 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
-    function repayBorrow(uint256 _underlyingAmount) external override {}
+    function repayBorrow(uint256 _repayAmount) external override {
+        _repayBorrowInternal(msg.sender, msg.sender, _repayAmount);
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function repayBorrowBehalf(
+        address _borrower,
+        uint256 _repayAmount
+    ) external override {
+        _repayBorrowInternal(msg.sender, _borrower, _repayAmount);
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function seize(
+        address _liquidator,
+        address _borrower,
+        uint256 _seizeTokens
+    ) external override nonReentrant {
+        _seizeInternal(msg.sender, _liquidator, _borrower, _seizeTokens);
+    }
 
     /// @inheritdoc ISFProtocolToken
     function liquidateBorrow(
         address _borrower,
-        uint256 _underlyingAmount
-    ) external override {}
+        address _collateralToken,
+        uint256 _repayAmount
+    ) external override {
+        address liquidator = msg.sender;
+        require(_borrower != liquidator, "can not liquidate own borrows");
+        require(_repayAmount > 0, "invalid liquidate amount");
+
+        _accrueInterest();
+        IMarketPositionManager(marketPositionManager).validateLiquidate(
+            address(this),
+            _collateralToken,
+            _borrower,
+            _repayAmount
+        );
+
+        uint256 actualLiquidateAmount = _repayBorrowInternal(
+            liquidator,
+            _borrower,
+            _repayAmount
+        );
+
+        uint256 seizeTokens = IMarketPositionManager(marketPositionManager)
+            .liquidateCalculateSeizeTokens(
+                address(this),
+                _collateralToken,
+                actualLiquidateAmount
+            );
+
+        require(
+            IERC20(_collateralToken).balanceOf(_borrower) >= seizeTokens,
+            "insufficient borrower balance for liquidate"
+        );
+
+        if (_collateralToken == address(this)) {
+            _seizeInternal(address(this), liquidator, _borrower, seizeTokens);
+        } else {
+            ISFProtocolToken(_collateralToken).seize(
+                liquidator,
+                _borrower,
+                seizeTokens
+            );
+        }
+
+        emit LiquidateBorrow(
+            liquidator,
+            _borrower,
+            actualLiquidateAmount,
+            _collateralToken,
+            seizeTokens
+        );
+    }
 
     /// @inheritdoc ISFProtocolToken
     function pause() external override onlyOwner whenNotPaused {
@@ -217,7 +295,11 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
-    function sweepToken(address _token) external override {}
+    function sweepToken(address _token) external override onlyOwner {
+        require(_token != underlyingToken, "can not sweep underlying token");
+        uint256 balance = IERC20(_token).balanceOf(address(this));
+        IERC20(_token).safeTransfer(owner(), balance);
+    }
 
     /// @notice Applies accrued interest to total borrows and reserves
     /// @dev This calculates interest accrued from the last checkpointed block
@@ -258,6 +340,46 @@ contract SFProtocolToken is
         borrowIndex = borrowIndexNew;
 
         emit InterestAccrued(cashPrior, accumulatedInterests, totalBorrowsNew);
+    }
+
+    /// @notice Payer repays a borrow belonging to borrower
+    /// @param _payer The account to repay debt being payed off
+    /// @param _borrower The account with the debt being payed off
+    /// @param _repayAmount The amount to repay, or -1 for the full outstanding amount
+    function _repayBorrowInternal(
+        address _payer,
+        address _borrower,
+        uint256 _repayAmount
+    ) internal returns (uint256) {
+        _accrueInterest();
+        IMarketPositionManager(marketPositionManager).checkListedToken(
+            address(this)
+        );
+
+        uint256 accountBorrowsPrior = _borrowBalanceStoredInternal(_borrower);
+        uint256 repayAmountFinal = _repayAmount > accountBorrowsPrior
+            ? accountBorrowsPrior
+            : _repayAmount;
+
+        require(repayAmountFinal > 0, "no borrows to repay");
+
+        uint256 actualRepayAmount = _doTransferIn(_payer, repayAmountFinal);
+        uint256 accountBorrowsNew = accountBorrowsPrior - actualRepayAmount;
+        uint256 totalBorrowsNew = totalBorrows - actualRepayAmount;
+
+        accountBorrows[_borrower].principal = accountBorrowsNew;
+        accountBorrows[_borrower].interestIndex = borrowIndex;
+        totalBorrows = totalBorrowsNew;
+
+        emit RepayBorrow(
+            _payer,
+            _borrower,
+            actualRepayAmount,
+            accountBorrowsNew,
+            totalBorrowsNew
+        );
+
+        return actualRepayAmount;
     }
 
     /// @notice Redeem undnerlying token as exact underlying or with shares.
@@ -408,5 +530,47 @@ contract SFProtocolToken is
         // recentBorrowBalance = borrower.borrowBalance * market.borrowIndex / borrower.borrowIndex
         uint256 principalTimesIndex = borrowSnapshot.principal * borrowIndex;
         return principalTimesIndex / borrowSnapshot.interestIndex;
+    }
+
+    /// @notice Transfers collateral tokens (this market) to the liquidator.
+    /// @dev Called only during an in-kind liquidation, or by liquidateBorrow during the liquidation of another CToken.
+    ///  Its absolutely critical to use msg.sender as the seizer cToken and not a parameter.
+    /// @param _seizeToken The contract seizing the collateral (i.e. borrowed cToken)
+    /// @param _liquidator The account receiving seized collateral
+    /// @param _borrower The account having collateral seized
+    /// @param _seizeAmount The number of cTokens to seize
+    function _seizeInternal(
+        address _seizeToken,
+        address _liquidator,
+        address _borrower,
+        uint256 _seizeAmount
+    ) internal {
+        IMarketPositionManager(marketPositionManager).validateSeize(
+            _seizeToken,
+            address(this)
+        );
+
+        require(_borrower != _liquidator, "can not liquidate own borrows");
+
+        uint256 seizeAmountForProtocol = (_seizeAmount *
+            protocolSeizeShareMantissa) / 1e18;
+        uint256 seizeAmountForLiquidator = _seizeAmount -
+            seizeAmountForProtocol;
+        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 addReserveAmount = (exchangeRate * seizeAmountForProtocol) /
+            1e18;
+
+        totalReserves = totalReserves + addReserveAmount;
+        _totalSupply = _totalSupply - seizeAmountForProtocol;
+        accountBalance[_borrower] -= _seizeAmount;
+        accountBalance[_liquidator] += seizeAmountForLiquidator;
+
+        emit Transfer(_borrower, _liquidator, seizeAmountForLiquidator);
+        emit Transfer(_borrower, address(this), seizeAmountForProtocol);
+        emit ReservesAdded(
+            address(this),
+            seizeAmountForProtocol,
+            totalReserves
+        );
     }
 }

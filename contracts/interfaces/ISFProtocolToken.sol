@@ -15,6 +15,9 @@ interface ISFProtocolToken {
         uint interestIndex;
     }
 
+    /// @notice The address of marketPositionManager.
+    function marketPositionManager() external view returns (address);
+
     /// @notice Get the address of underlying.
     function underlyingToken() external view returns (address);
 
@@ -28,6 +31,9 @@ interface ISFProtocolToken {
     function getAccountSnapshot(
         address _account
     ) external view returns (uint256, uint256, uint256);
+
+    /// @notice Get exchangeRate.
+    function getExchangeRateStored() external view returns (uint256);
 
     /// @notice Supply underlying assets to lending pool.
     /// @dev Reverts when contract is paused.
@@ -50,15 +56,37 @@ interface ISFProtocolToken {
     function borrow(uint256 _underlyingAmount) external;
 
     /// @notice Repay borrowed underlying assets and get back SF token(shares).
-    /// @param _underlyingAmount The amount of underlying assets to repay.
-    function repayBorrow(uint256 _underlyingAmount) external;
+    /// @param _repayAmount The amount of underlying assets to repay.
+    function repayBorrow(uint256 _repayAmount) external;
+
+    /// @notice Sender repays a borrow belonging to borrower
+    /// @param _borrower the account with the debt being payed off
+    /// @param _repayAmount The amount to repay, or -1 for the full outstanding amount
+    function repayBorrowBehalf(
+        address _borrower,
+        uint256 _repayAmount
+    ) external;
 
     /// @notice Liquidate borrowed underlying assets instead of borrower.
     /// @param _borrower The address of borrower.
-    /// @param _underlyingAmount The amount of underlying assert to liquidate.
+    /// @param _collateralToken The address of token to be used as collateral.
+    /// @param _repayAmount The amount of underlying assert to liquidate.
     function liquidateBorrow(
         address _borrower,
-        uint256 _underlyingAmount
+        address _collateralToken,
+        uint256 _repayAmount
+    ) external;
+
+    /// @notice Transfers collateral tokens (this market) to the liquidator.
+    /// @dev Will fail unless called by another cToken during the process of liquidation.
+    ///  Its absolutely critical to use msg.sender as the borrowed cToken and not a parameter.
+    /// @param _liquidator The account receiving seized collateral
+    /// @param _borrower The account having collateral seized
+    /// @param _seizeTokens The number of cTokens to seize
+    function seize(
+        address _liquidator,
+        address _borrower,
+        uint256 _seizeTokens
     ) external;
 
     /// @notice Sweep tokens.
@@ -91,5 +119,27 @@ interface ISFProtocolToken {
         uint borrowAmount,
         uint accountBorrows,
         uint totalBorrows
+    );
+
+    event RepayBorrow(
+        address payer,
+        address borrower,
+        uint repayAmount,
+        uint accountBorrows,
+        uint totalBorrows
+    );
+
+    event ReservesAdded(
+        address benefactor,
+        uint addAmount,
+        uint newTotalReserves
+    );
+
+    event LiquidateBorrow(
+        address liquidator,
+        address borrower,
+        uint repayAmount,
+        address cTokenCollateral,
+        uint seizeTokens
     );
 }
