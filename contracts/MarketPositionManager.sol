@@ -26,6 +26,15 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     /// @notice Assets array that a user borrowed.
     mapping(address => EnumerableSet.AddressSet) private accountAssets;
 
+    /// @notice Multiplier representing the discount on collateral that a liquidator receives
+    uint256 public liquidationIncentiveMantissa;
+
+    /// @notice The max liquidate rate based on borrowed amount.
+    uint16 public maxLiquidateRate;
+
+    /// @notice 10,000 = 100%
+    uint16 public constant FIXED_RATE = 10_000;
+
     IPriceOracle public priceOracle;
 
     modifier onlyValidCaller(address _token) {
@@ -49,11 +58,116 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         return markets[_token].accountMembership[_account];
     }
 
+    event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
+
+    /// @notice Set new MaxLiquidateRate.
+    /// @dev Only owner can call this function.
+    function setMaxLiquidateRate(
+        uint16 _newMaxLiquidateRate
+    ) external onlyOwner {
+        require(_newMaxLiquidateRate <= FIXED_RATE, "invalid maxLiquidateRate");
+        maxLiquidateRate = _newMaxLiquidateRate;
+        emit NewMaxLiquidateRateSet(_newMaxLiquidateRate);
+    }
+
     /// @inheritdoc IMarketPositionManager
     function validateSupply(
         address _token
     ) external view override onlyValidCaller(_token) {
         require(!supplyGuardianPaused[_token], "supplying is paused");
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function checkListedToken(
+        address _token
+    ) external view override returns (bool) {
+        return markets[_token].isListed;
+    }
+
+    bool public seizeGuardianPaused;
+
+    /// @inheritdoc IMarketPositionManager
+    function validateSeize(
+        address _collateralToken,
+        address _borrowToken
+    ) external view override {
+        require(!seizeGuardianPaused, "seize is paused");
+        require(
+            markets[_collateralToken].isListed &&
+                markets[_borrowToken].isListed,
+            "not listed token"
+        );
+        require(
+            ISFProtocolToken(_collateralToken).marketPositionManager() ==
+                ISFProtocolToken(_borrowToken).marketPositionManager(),
+            "mismatched markeManagerPosition"
+        );
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function liquidateCalculateSeizeTokens(
+        address _borrowToken,
+        address _collateralToken,
+        uint256 _repayAmount
+    ) external view override returns (uint256) {
+        uint256 borrowTokenPrice = priceOracle.getUnderlyingPrice(_borrowToken);
+        uint256 collateralTokenPrice = priceOracle.getUnderlyingPrice(
+            _collateralToken
+        );
+
+        require(
+            borrowTokenPrice > 0 && collateralTokenPrice > 0,
+            "price error"
+        );
+
+        uint256 exchangeRate = ISFProtocolToken(_collateralToken)
+            .getExchangeRateStored();
+
+        uint256 borrowIncentive = liquidationIncentiveMantissa *
+            borrowTokenPrice;
+        uint256 collateralIncentive = collateralTokenPrice * exchangeRate;
+
+        uint256 ratio = (borrowIncentive * 1e18) / collateralIncentive;
+        uint256 seizeTokens = (ratio * _repayAmount) / 1e18;
+
+        return seizeTokens;
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function validateLiquidate(
+        address _tokenBorrowed,
+        address _tokenCollateral,
+        address _borrower,
+        uint256 _liquidateAmount
+    ) external view {
+        require(
+            markets[_tokenBorrowed].isListed &&
+                markets[_tokenCollateral].isListed,
+            "not listed token"
+        );
+
+        (, uint256 borrowAmount, ) = ISFProtocolToken(_tokenBorrowed)
+            .getAccountSnapshot(_borrower);
+
+        if (borrowGuardianPaused[_tokenBorrowed]) {
+            require(
+                borrowAmount >= _liquidateAmount,
+                "can not liquidate more than borrowed"
+            );
+        } else {
+            // To liquidate, borrower should be under collateralized.
+            require(
+                !_checkValidation(_borrower, address(0), 0, 0),
+                "unable to liquidate"
+            );
+
+            uint256 maxLiquidateAmount = (borrowAmount * maxLiquidateRate) /
+                FIXED_RATE;
+            require(
+                maxLiquidateAmount > _liquidateAmount,
+                "too much to liquidate"
+            );
+        }
     }
 
     /// @inheritdoc IMarketPositionManager
@@ -81,7 +195,10 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             );
         }
 
-        _checkValidation(_borrower, _token, 0, _borrowAmount);
+        require(
+            _checkValidation(_borrower, _token, 0, _borrowAmount),
+            "under collateralized"
+        );
 
         return true;
     }
@@ -98,7 +215,10 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             return true;
         }
 
-        _checkValidation(_redeemer, _token, _redeemAmount, 0);
+        require(
+            _checkValidation(_redeemer, _token, _redeemAmount, 0),
+            "under collateralized"
+        );
 
         return true;
     }
@@ -108,22 +228,26 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         address _token,
         uint256 _redeemAmount,
         uint256 _borrowAmount
-    ) internal view {
+    ) internal view returns (bool) {
         address[] memory assets = accountAssets[_account].values();
         uint256 length = assets.length;
         if (length == 0) {
-            return;
+            return true;
         }
 
         uint256 totalCollateral = 0;
         uint256 totalDebt = 0;
+        uint256 redeemAmount = _redeemAmount;
+        uint256 borrowAmount = _borrowAmount;
+        address account = _account;
+        address token = _token;
         for (uint256 i = 0; i < length; i++) {
             ISFProtocolToken asset = ISFProtocolToken(assets[i]);
             (
                 uint256 shareBalance,
                 uint256 borrowedAmount,
                 uint256 exchangeRate
-            ) = asset.getAccountSnapshot(_account);
+            ) = asset.getAccountSnapshot(account);
 
             uint256 tokenPrice = priceOracle.getUnderlyingPrice(address(asset));
             require(tokenPrice > 0, "price error");
@@ -135,14 +259,14 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
 
             // accountDebt is USD amount of user should pay
             uint256 accountDebt = (tokenPrice * borrowedAmount) / 1e18;
-            if (address(asset) == _token) {
+            if (address(asset) == token) {
                 accountDebt +=
-                    (tokenPrice * (_redeemAmount + _borrowAmount)) /
+                    (tokenPrice * (redeemAmount + borrowAmount)) /
                     1e18;
             }
             totalDebt += accountDebt;
         }
 
-        require(totalCollateral > totalDebt, "under collateralized");
+        return totalCollateral > totalDebt;
     }
 }
