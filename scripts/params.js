@@ -1,0 +1,29 @@
+const DEPLOYMENT_PARAM = {
+    hedera_mainnet: {
+        dexRouterV2Address: "0x00000000000000000000000000000000002e7a5d",
+        WBTCAddress: "0x0000000000000000000000000000000000101afb",
+        WETHAddress: "0x000000000000000000000000000000000008437c",
+        HBARXAddress: "0x00000000000000000000000000000000000cba44",
+        USDCAddress: "0x000000000000000000000000000000000006f89a",
+    },
+    hardhat: {
+        dexRouterV2Address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+        WBTCAddress: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        WETHAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        USDCAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    },
+};
+
+const getDeploymentParam = () => {
+    if (network.name == "hedera_mainnet") {
+        return DEPLOYMENT_PARAM.hedera_mainnet;
+    } else if (network.name == "hardhat") {
+        return DEPLOYMENT_PARAM.hardhat;
+    } else {
+        return {};
+    }
+};
+
+module.exports = {
+    getDeploymentParam,
+};

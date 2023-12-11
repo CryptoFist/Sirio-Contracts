@@ -13,7 +13,8 @@ module.exports = {
     networks: {
         hardhat: {
             forking: {
-                url: "https://mainnet.hashio.io/api",
+                url: `https://mainnet.infura.io/v3/${process.env.ETH_INFURA_ID}`,
+                blockNumber: 18761944,
             },
         },
         hedera_mainnet: {
