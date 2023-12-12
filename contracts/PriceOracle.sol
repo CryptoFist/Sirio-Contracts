@@ -33,33 +33,31 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
         baseToken = _baseToken;
     }
 
+    function getTokenPrice(address _token) external view returns (uint256) {
+        return _getTokenPrice(_token);
+    }
+
     function getUnderlyingPrice(
         address _token
     ) external view returns (uint256) {
         address underlyingToken = ISFProtocolToken(_token).underlyingToken();
-        address pairAddress = IUniswapV2Factory(factory).getPair(
-            baseToken,
-            underlyingToken
-        );
-        if (pairAddress == address(0)) {
-            return 0;
-        }
+        return _getTokenPrice(underlyingToken);
+    }
 
-        (uint112 reserve0, uint112 reserve1, ) = IUniswapV2Pair(pairAddress)
-            .getReserves();
-
-        address token0 = IUniswapV2Pair(pairAddress).token0();
-
-        uint256 baseReserve = token0 == baseToken ? reserve0 : reserve1;
-        uint256 tokenReserve = token0 == underlyingToken ? reserve0 : reserve1;
-
+    function _getTokenPrice(address _token) internal view returns (uint256) {
         uint8 baseDecimal = IToken(baseToken).decimals();
-        uint8 tokenDecimal = IToken(underlyingToken).decimals();
+        uint8 tokenDecimal = IToken(_token).decimals();
 
-        baseReserve = _scaleTo(baseReserve, baseDecimal, 18);
-        tokenReserve = _scaleTo(tokenReserve, tokenDecimal, 18);
+        address[] memory path = new address[](2);
+        path[0] = _token;
+        path[1] = baseToken;
+        uint256[] memory amounts = IUniswapV2Router02(swapRouter).getAmountsOut(
+            10 ** tokenDecimal,
+            path
+        );
 
-        return (baseReserve * 1e18) / tokenReserve;
+        uint256 price = amounts[amounts.length - 1];
+        return _scaleTo(price, baseDecimal, 18);
     }
 
     function _scaleTo(
