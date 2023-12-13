@@ -1,3 +1,5 @@
+const { ethers } = require("hardhat");
+
 const DEPLOYMENT_PARAM = {
     hedera_mainnet: {
         dexRouterV2Address: "0x00000000000000000000000000000000002e7a5d",
@@ -12,6 +14,16 @@ const DEPLOYMENT_PARAM = {
         WBTCAddress: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
         WETHAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         USDCAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        maxLiquidateRate: 10000, // 100%
+        initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
+        interestRate: {
+            blocksPerYear: 365 * 24 * 60 * 60,
+            baseRatePerYear: ethers.utils.parseEther("0.02"),
+            multiplerPerYear: ethers.utils.parseEther("0.225"),
+            jumpMultiplierPerYear: ethers.utils.parseEther("1.25"),
+            kink: ethers.utils.parseEther("0.8"),
+            name: "MediumRateModel",
+        },
     },
 };
 

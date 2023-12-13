@@ -94,6 +94,11 @@ interface ISFProtocolToken {
     /// @param _token The address of token to sweep.
     function sweepToken(address _token) external;
 
+    /// @notice Get supplied underlying token amount of an user.
+    function getSuppliedAmount(
+        address _account
+    ) external view returns (uint256);
+
     /// @notice Pause contract when critical error occurs.
     /// @dev Only owner can call this function.
     function pause() external;

@@ -7,6 +7,8 @@ import "./interfaces/IPriceOracle.sol";
 import "./interfaces/ISFProtocolToken.sol";
 import "./interfaces/IMarketPositionManager.sol";
 
+import "hardhat/console.sol";
+
 contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -43,31 +45,46 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         _;
     }
 
-    function initialize() public initializer {
+    function initialize(
+        address _priceOracle,
+        uint16 _maxLiquidateRate
+    ) public initializer {
         __Ownable_init();
+        setPriceOracle(_priceOracle);
+        setMaxLiquidateRate(_maxLiquidateRate);
     }
 
-    /// @notice Returns whether the given account is entered in the given asset
-    /// @param _account The address of the account to check
-    /// @param _token The cToken to check
-    /// @return True if the account is in the asset, otherwise false.
+    /// @inheritdoc IMarketPositionManager
+    function setPriceOracle(address _priceOracle) public override onlyOwner {
+        require(
+            _priceOracle != address(0),
+            "invalid PriceOracle contract address"
+        );
+        priceOracle = IPriceOracle(_priceOracle);
+    }
+
+    /// @inheritdoc IMarketPositionManager
     function checkMembership(
         address _account,
         address _token
-    ) external view returns (bool) {
+    ) external view override returns (bool) {
         return markets[_token].accountMembership[_account];
     }
 
-    event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
-
-    /// @notice Set new MaxLiquidateRate.
-    /// @dev Only owner can call this function.
+    /// @inheritdoc IMarketPositionManager
     function setMaxLiquidateRate(
         uint16 _newMaxLiquidateRate
-    ) external onlyOwner {
+    ) public override onlyOwner {
         require(_newMaxLiquidateRate <= FIXED_RATE, "invalid maxLiquidateRate");
         maxLiquidateRate = _newMaxLiquidateRate;
         emit NewMaxLiquidateRateSet(_newMaxLiquidateRate);
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function addToMarket(address _token) external override onlyOwner {
+        MarketInfo storage info = markets[_token];
+        require(!info.isListed, "already added");
+        info.isListed = true;
     }
 
     /// @inheritdoc IMarketPositionManager
