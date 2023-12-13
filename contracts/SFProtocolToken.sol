@@ -13,6 +13,8 @@ import "./interfaces/ISFProtocolToken.sol";
 import "./interfaces/IInterestRateModel.sol";
 import "./interfaces/IMarketPositionManager.sol";
 
+import "hardhat/console.sol";
+
 contract SFProtocolToken is
     ERC20Upgradeable,
     Ownable2StepUpgradeable,
@@ -53,7 +55,7 @@ contract SFProtocolToken is
     uint256 public totalReserves;
 
     /// @notice Maximum borrow rate that can ever be applied (.0005% / block)
-    uint256 internal constant borrowRateMaxMantissa = 0.00004e16;
+    uint256 internal borrowRateMaxMantissa;
 
     /// @notice Fraction of interest currently set aside for reserves
     uint256 public reserveFactorMantissa;
@@ -65,10 +67,10 @@ contract SFProtocolToken is
     uint256 public borrowIndex;
 
     /// @notice Share of seized collateral that is added to reserves
-    uint256 public constant protocolSeizeShareMantissa = 2.8e16; //2.8%
+    uint256 public protocolSeizeShareMantissa;
 
     /// @notice 100% = 10000
-    uint16 public FEERATE_FIXED_POINT = 10_000;
+    uint16 public FEERATE_FIXED_POINT;
 
     /// @notice Underlying Token Decimals
     uint8 private underlyingDecimals;
@@ -81,7 +83,7 @@ contract SFProtocolToken is
         uint256 _initialExchangeRateMantissa,
         string memory _name,
         string memory _symbol
-    ) public {
+    ) public initializer {
         require(_underlyingToken != address(0), "invalid underlying token");
         require(
             _initialExchangeRateMantissa > 0,
@@ -92,12 +94,18 @@ contract SFProtocolToken is
             "invalid marketPositionManager address"
         );
 
+        // set basic args
+        borrowRateMaxMantissa = 0.00004e16;
+        protocolSeizeShareMantissa = 2.8e16; //2.8%
+        FEERATE_FIXED_POINT = 10_000;
+
         feeRate = _feeRate;
         underlyingToken = _underlyingToken;
         interestRateModel = _interestRateModel;
         initialExchangeRateMantissa = _initialExchangeRateMantissa;
         accrualBlockNumber = block.number;
         underlyingDecimals = IERC20Metadata(underlyingToken).decimals();
+        marketPositionManager = _marketPositionManager;
         borrowIndex = 1e18;
         __ERC20_init(_name, _symbol);
         __Ownable2Step_init();
@@ -108,6 +116,18 @@ contract SFProtocolToken is
         address _account
     ) public view virtual override returns (uint256) {
         return accountBalance[_account];
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function getSuppliedAmount(
+        address _account
+    ) external view override returns (uint256) {
+        uint256 balance = accountBalance[_account];
+        if (balance == 0) return 0;
+
+        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
+        return _convertToUnderlying(suppliedAmount);
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -135,6 +155,7 @@ contract SFProtocolToken is
     function supplyUnderlying(
         uint256 _underlyingAmount
     ) external override whenNotPaused {
+        require(_underlyingAmount > 0, "invalid supply amount");
         IMarketPositionManager(marketPositionManager).validateSupply(
             address(this)
         );
@@ -321,6 +342,7 @@ contract SFProtocolToken is
                 borrowsPrior,
                 reservesPrior
             );
+
         require(borrowRate <= borrowRateMaxMantissa, "borrow rate is too high");
 
         uint256 blockDelta = curBlockNumber - accrualBlockNumber;
@@ -328,7 +350,8 @@ contract SFProtocolToken is
         uint256 accumulatedInterests = (simpleInterestFactor * totalBorrows) /
             1e18;
         uint256 totalBorrowsNew = totalBorrows + accumulatedInterests;
-        uint256 totalReservesNew = (accumulatedInterests * reservesPrior) +
+        uint256 totalReservesNew = (accumulatedInterests * reservesPrior) /
+            1e18 +
             totalReserves;
         uint256 borrowIndexNew = (simpleInterestFactor * borrowIndexPrior) /
             1e18 +
@@ -468,9 +491,9 @@ contract SFProtocolToken is
         uint256 _amount
     ) internal view returns (uint256) {
         if (underlyingDecimals > 18) {
-            return _amount / (underlyingDecimals - 18);
+            return _amount / 10 ** (underlyingDecimals - 18);
         } else {
-            return _amount * (18 - underlyingDecimals);
+            return _amount * 10 ** (18 - underlyingDecimals);
         }
     }
 
@@ -479,9 +502,9 @@ contract SFProtocolToken is
         uint256 _amount
     ) internal view returns (uint256) {
         if (underlyingDecimals < 18) {
-            return _amount / (18 - underlyingDecimals);
+            return _amount / 10 ** (18 - underlyingDecimals);
         } else {
-            return _amount * (underlyingDecimals - 18);
+            return _amount * 10 ** (underlyingDecimals - 18);
         }
     }
 

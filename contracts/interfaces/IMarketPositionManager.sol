@@ -10,6 +10,28 @@ interface IMarketPositionManager {
         bool isListed;
     }
 
+    /// @notice Set new PriceOracle contract address.
+    /// @dev Only owner can call this function.
+    function setPriceOracle(address _priceOracle) external;
+
+    /// @notice Set new MaxLiquidateRate.
+    /// @dev Only owner can call this function.
+    function setMaxLiquidateRate(uint16 _newMaxLiquidateRate) external;
+
+    /// @notice Add sfToken to markets.
+    /// @dev Only owner can call this function.
+    /// @param _token The address of sfToken to add to markets.
+    function addToMarket(address _token) external;
+
+    /// @notice Returns whether the given account is entered in the given asset
+    /// @param _account The address of the account to check
+    /// @param _token The sfToken to check
+    /// @return True if the account is in the asset, otherwise false.
+    function checkMembership(
+        address _account,
+        address _token
+    ) external view returns (bool);
+
     /// @notice Check if token is listed to market or not.
     function checkListedToken(address _token) external view returns (bool);
 
@@ -54,10 +76,9 @@ interface IMarketPositionManager {
     ) external view;
 
     /// @notice Calculate number of tokens of collateral asset to seize given an underlying amount
-    /// @dev Used in liquidation (called in cToken.liquidateBorrowFresh)
     /// @param _borrowToken The address of the borrowed token
     /// @param _collateralToken The address of the collateral token
-    /// @param _repayAmount The amount of cTokenBorrowed underlying to convert into cTokenCollateral tokens
+    /// @param _repayAmount The amount of sfTokenBorrowed underlying to convert into sfTokenCollateral tokens
     function liquidateCalculateSeizeTokens(
         address _borrowToken,
         address _collateralToken,
@@ -66,4 +87,6 @@ interface IMarketPositionManager {
 
     /// @notice Check if supplying is allowed and token is listed to market.
     function validateSupply(address _token) external view;
+
+    event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
 }
