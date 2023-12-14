@@ -6,11 +6,13 @@ const {
     deployProxy,
     getCurrentTimestamp,
     smallNum,
+    increaseBlock,
 } = require("hardhat-libutils");
 
 const { getDeploymentParam } = require("../scripts/params");
 
 const { erc20_abi } = require("../external_abi/ERC20.abi.json");
+const { WETH_abi } = require("../external_abi/WETH.abi.json");
 const {
     uniswapV2_router,
 } = require("../external_abi/UniswapV2Router.abi.json");
@@ -19,13 +21,8 @@ describe("Sirio Finance Protocol test", function () {
     let feeRate, param, underlyingTokenAddress, name, symbol;
     let DAIAddress = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
     before(async function () {
-        [
-            this.deployer,
-            this.supplier_1,
-            this.supplier_2,
-            this.borrower_1,
-            this.borrower_2,
-        ] = await ethers.getSigners();
+        [this.deployer, this.account_1, this.account_2, this.account_3] =
+            await ethers.getSigners();
 
         param = getDeploymentParam();
         underlyingTokenAddress = param.USDCAddress;
@@ -39,6 +36,12 @@ describe("Sirio Finance Protocol test", function () {
         this.USDC = new ethers.Contract(
             param.USDCAddress,
             erc20_abi,
+            this.deployer
+        );
+
+        this.WETH = new ethers.Contract(
+            param.WETHAddress,
+            WETH_abi,
             this.deployer
         );
 
@@ -82,6 +85,16 @@ describe("Sirio Finance Protocol test", function () {
             name,
             symbol,
         ]);
+
+        this.sfWETH = await deployProxy("SFProtocolToken", "SFProtocolToken", [
+            feeRate,
+            param.WETHAddress,
+            this.interestRateModel.address,
+            this.marketPositionManager.address,
+            param.initialExchangeRateMantissa,
+            "Sirio Wrapped ETH",
+            "sfWETH",
+        ]);
     });
 
     it("check deployment", async function () {
@@ -92,20 +105,20 @@ describe("Sirio Finance Protocol test", function () {
         let supplyAmount;
         it("buy some USDC for supply", async function () {
             await this.dexRouter
-                .connect(this.supplier_1)
+                .connect(this.account_1)
                 .swapExactETHForTokens(
                     0,
                     [param.WETHAddress, this.USDC.address],
-                    this.supplier_1.address,
+                    this.account_1.address,
                     BigInt(await getCurrentTimestamp()) + BigInt(100),
                     { value: bigNum(5, 18) }
                 );
 
-            supplyAmount = await this.USDC.balanceOf(this.supplier_1.address);
+            supplyAmount = await this.USDC.balanceOf(this.account_1.address);
             console.log("swappedAmount: ", smallNum(supplyAmount, 6));
             supplyAmount = BigInt(supplyAmount) / BigInt(4);
 
-            await this.USDC.connect(this.supplier_1).approve(
+            await this.USDC.connect(this.account_1).approve(
                 this.sfUSDC.address,
                 BigInt(supplyAmount)
             );
@@ -113,28 +126,29 @@ describe("Sirio Finance Protocol test", function () {
 
         it("reverts if supply amount is invalid", async function () {
             await expect(
-                this.sfUSDC.connect(this.supplier_1).supplyUnderlying(0)
+                this.sfUSDC.connect(this.account_1).supplyUnderlying(0)
             ).to.be.revertedWith("invalid supply amount");
         });
 
         it("reverts if token is not listed", async function () {
             await expect(
                 this.sfUSDC
-                    .connect(this.supplier_1)
+                    .connect(this.account_1)
                     .supplyUnderlying(BigInt(supplyAmount))
             ).to.be.revertedWith("not listed token");
         });
 
-        it("add USDC to markets", async function () {
+        it("add USDC and WETH to markets", async function () {
             // reverts if caller is not the owner
             await expect(
                 this.marketPositionManager
-                    .connect(this.supplier_1)
+                    .connect(this.account_1)
                     .addToMarket(this.sfUSDC.address)
             ).to.be.revertedWith("Ownable: caller is not the owner");
 
             // add sfUSDC to markets
             await this.marketPositionManager.addToMarket(this.sfUSDC.address);
+            await this.marketPositionManager.addToMarket(this.sfWETH.address);
 
             // reverts if token is already added
             await expect(
@@ -143,13 +157,11 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("supply and check", async function () {
-            let beforeBal = await this.sfUSDC.balanceOf(
-                this.supplier_1.address
-            );
+            let beforeBal = await this.sfUSDC.balanceOf(this.account_1.address);
             await this.sfUSDC
-                .connect(this.supplier_1)
+                .connect(this.account_1)
                 .supplyUnderlying(BigInt(supplyAmount));
-            let afterBal = await this.sfUSDC.balanceOf(this.supplier_1.address);
+            let afterBal = await this.sfUSDC.balanceOf(this.account_1.address);
             let receivedShareAmounts = smallNum(
                 BigInt(afterBal) - BigInt(beforeBal),
                 18
@@ -167,19 +179,17 @@ describe("Sirio Finance Protocol test", function () {
 
         it("supply again and check", async function () {
             let originShare = await this.sfUSDC.balanceOf(
-                this.supplier_1.address
+                this.account_1.address
             );
-            await this.USDC.connect(this.supplier_1).approve(
+            await this.USDC.connect(this.account_1).approve(
                 this.sfUSDC.address,
                 BigInt(supplyAmount)
             );
-            let beforeBal = await this.sfUSDC.balanceOf(
-                this.supplier_1.address
-            );
+            let beforeBal = await this.sfUSDC.balanceOf(this.account_1.address);
             await this.sfUSDC
-                .connect(this.supplier_1)
+                .connect(this.account_1)
                 .supplyUnderlying(BigInt(supplyAmount));
-            let afterBal = await this.sfUSDC.balanceOf(this.supplier_1.address);
+            let afterBal = await this.sfUSDC.balanceOf(this.account_1.address);
             let receivedShareAmounts = BigInt(afterBal) - BigInt(beforeBal);
             expect(smallNum(originShare, 18)).to.be.equal(
                 smallNum(receivedShareAmounts, 18)
@@ -191,16 +201,16 @@ describe("Sirio Finance Protocol test", function () {
         describe("redeem", function () {
             it("reverts if share amount is invalid", async function () {
                 await expect(
-                    this.sfUSDC.connect(this.supplier_1).redeem(0)
+                    this.sfUSDC.connect(this.account_1).redeem(0)
                 ).to.be.revertedWith("invalid amount");
             });
 
             it("redeem and check", async function () {
                 let suppliedAmount = await this.sfUSDC.getSuppliedAmount(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 let ownedShareAmount = await this.sfUSDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
 
                 let redeemShare = BigInt(ownedShareAmount) / BigInt(2);
@@ -216,16 +226,16 @@ describe("Sirio Finance Protocol test", function () {
                     this.deployer.address
                 );
                 let beforeRecvBal = await this.USDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 await this.sfUSDC
-                    .connect(this.supplier_1)
+                    .connect(this.account_1)
                     .redeem(BigInt(redeemShare));
                 let afterOwnerBal = await this.USDC.balanceOf(
                     this.deployer.address
                 );
                 let afterRecvBal = await this.USDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
 
                 let ownerReceivedAmount =
@@ -247,19 +257,17 @@ describe("Sirio Finance Protocol test", function () {
         describe("redeemExactUnderlying", function () {
             it("reverts if amount is invalid", async function () {
                 await expect(
-                    this.sfUSDC
-                        .connect(this.supplier_1)
-                        .redeemExactUnderlying(0)
+                    this.sfUSDC.connect(this.account_1).redeemExactUnderlying(0)
                 ).to.be.revertedWith("invalid amount");
             });
 
             it("redeem and check", async function () {
                 let suppliedAmount = await this.sfUSDC.getSuppliedAmount(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 let redeemAmount = BigInt(suppliedAmount) / BigInt(2);
                 let ownedShareAmount = await this.sfUSDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 let feeAmount =
                     (BigInt(redeemAmount) * BigInt(feeRate.redeemingFeeRate)) /
@@ -268,19 +276,19 @@ describe("Sirio Finance Protocol test", function () {
                     BigInt(redeemAmount) - BigInt(feeAmount);
 
                 let beforeUnderlyingBal = await this.USDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 let beforeShareBal = await this.sfUSDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 await this.sfUSDC
-                    .connect(this.supplier_1)
+                    .connect(this.account_1)
                     .redeemExactUnderlying(BigInt(redeemAmount));
                 let afterUnderlyingBal = await this.USDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
                 let afterShareBal = await this.sfUSDC.balanceOf(
-                    this.supplier_1.address
+                    this.account_1.address
                 );
 
                 expect(
@@ -289,6 +297,270 @@ describe("Sirio Finance Protocol test", function () {
                 expect(
                     BigInt(beforeShareBal) - BigInt(afterShareBal)
                 ).to.be.equal(BigInt(ownedShareAmount) / BigInt(2));
+            });
+        });
+    });
+
+    describe("borrow", function () {
+        let poolBalance, borrowAmount;
+        it("get current supplied amount", async function () {
+            poolBalance = await this.sfUSDC.getUnderlyingBalance();
+            console.log("current PoolBalance: ", smallNum(poolBalance, 6));
+            borrowAmount = BigInt(poolBalance) / BigInt(5);
+        });
+
+        it("reverts if borrower has not enough collateral", async function () {
+            let borrowableAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                );
+            expect(borrowableAmount).to.be.equal(0);
+            await expect(
+                this.sfUSDC.connect(this.account_2).borrow(BigInt(borrowAmount))
+            ).to.be.revertedWith("under collateralized");
+        });
+
+        it("reverts if not enough supply pool even though borrower has enough collateral", async function () {
+            let USDCBorrowableAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_1.address,
+                    this.sfUSDC.address
+                );
+            expect(smallNum(USDCBorrowableAmount, 6)).to.be.greaterThan(0);
+            let borrowableWETHAmount = await this.dexRouter.getAmountsOut(
+                BigInt(USDCBorrowableAmount),
+                [param.USDCAddress, param.WETHAddress]
+            );
+            borrowableWETHAmount = borrowableWETHAmount[1];
+            expect(smallNum(borrowableWETHAmount, 18)).to.be.greaterThan(0);
+
+            expect(
+                smallNum(
+                    await this.marketPositionManager.getBorrowableAmount(
+                        this.account_1.address,
+                        this.sfWETH.address
+                    ),
+                    18
+                )
+            ).to.be.equal(0);
+
+            await expect(
+                this.sfWETH
+                    .connect(this.account_1)
+                    .borrow(BigInt(borrowableWETHAmount))
+            ).to.be.revertedWith("insufficient pool amount to borrow");
+        });
+
+        it("supply WETH with account_2", async function () {
+            let supplyAmount = bigNum(5, 18);
+            await this.WETH.connect(this.account_2).deposit({
+                value: BigInt(supplyAmount),
+            });
+            await this.WETH.connect(this.account_2).approve(
+                this.sfWETH.address,
+                BigInt(supplyAmount)
+            );
+            await this.sfWETH
+                .connect(this.account_2)
+                .supplyUnderlying(BigInt(supplyAmount));
+        });
+
+        it("check borrowable USDC amount", async function () {
+            let supplyUSDCAmount = await this.sfUSDC.getUnderlyingBalance();
+            let borrowableUSDCAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                );
+            expect(BigInt(supplyUSDCAmount)).to.be.equal(
+                BigInt(borrowableUSDCAmount)
+            );
+        });
+
+        it("borrow USDC", async function () {
+            let borrowableUSDCAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                );
+
+            let beforeUSDCBal = await this.USDC.balanceOf(
+                this.account_2.address
+            );
+            let [, beforeBorrowedAmount] = await this.sfUSDC.getAccountSnapshot(
+                this.account_2.address
+            );
+            let beforeTotalBorrows = await this.sfUSDC.totalBorrows();
+            let beforeTotalReserves = await this.sfUSDC.totalReserves();
+            let beforeBorrowIndex = await this.sfUSDC.borrowIndex();
+            await this.sfUSDC
+                .connect(this.account_2)
+                .borrow(BigInt(borrowableUSDCAmount));
+
+            let afterUSDCBal = await this.USDC.balanceOf(
+                this.account_2.address
+            );
+            let [, afterBorrowedAmount] = await this.sfUSDC.getAccountSnapshot(
+                this.account_2.address
+            );
+            let afterTotalBorrows = await this.sfUSDC.totalBorrows();
+            let afterTotalReserves = await this.sfUSDC.totalReserves();
+            let afterBorrowIndex = await this.sfUSDC.borrowIndex();
+
+            let receviedUSDC = BigInt(afterUSDCBal) - BigInt(beforeUSDCBal);
+            let borrowedAmount =
+                BigInt(afterBorrowedAmount) - BigInt(beforeBorrowedAmount);
+            let totalBorrows =
+                BigInt(afterTotalBorrows) - BigInt(beforeTotalBorrows);
+            let totalReserves =
+                BigInt(afterTotalReserves) - BigInt(beforeTotalReserves);
+
+            let feeAmount =
+                (BigInt(borrowableUSDCAmount) *
+                    BigInt(feeRate.borrowingFeeRate)) /
+                BigInt(10000);
+            let expectAmount = BigInt(borrowedAmount) - BigInt(feeAmount);
+
+            expect(smallNum(afterBorrowIndex, 18)).to.be.greaterThan(
+                smallNum(beforeBorrowIndex, 18)
+            );
+
+            expect(BigInt(receviedUSDC)).to.be.equal(BigInt(expectAmount));
+            expect(BigInt(totalBorrows)).to.be.equal(
+                BigInt(borrowableUSDCAmount)
+            );
+            expect(BigInt(totalReserves)).to.be.equal(BigInt(0));
+            expect(BigInt(borrowedAmount)).to.be.equal(
+                BigInt(borrowableUSDCAmount)
+            );
+
+            expect(
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                )
+            ).to.be.equal(0);
+        });
+
+        it("increase blockNumber and check borrowAmount", async function () {
+            let [, beforeBorrowedAmount] = await this.sfUSDC.getAccountSnapshot(
+                this.account_2.address
+            );
+
+            await increaseBlock(28800);
+            let [, afterBorrowedAmount] = await this.sfUSDC.getAccountSnapshot(
+                this.account_2.address
+            );
+
+            console.log(
+                smallNum(afterBorrowedAmount, 6),
+                smallNum(beforeBorrowedAmount, 6)
+            );
+            expect(smallNum(afterBorrowedAmount, 6)).to.be.greaterThan(
+                smallNum(beforeBorrowedAmount, 6)
+            );
+        });
+    });
+
+    describe("repayBorrow", function () {
+        describe("repayBorrow", function () {
+            it("reverts if no repayAmount", async function () {
+                let [shareAmount, repayAmount] =
+                    await this.sfUSDC.getAccountSnapshot(
+                        this.account_2.address
+                    );
+                repayAmount = BigInt(repayAmount) * BigInt(2);
+
+                await expect(
+                    this.sfUSDC
+                        .connect(this.account_1)
+                        .repayBorrow(BigInt(repayAmount))
+                ).to.be.revertedWith("no borrows to repay");
+            });
+
+            it("get debt amount", async function () {
+                let [shareAmount, beforeRepayAmount] =
+                    await this.sfUSDC.getAccountSnapshot(
+                        this.account_2.address
+                    );
+                let repayAmount = BigInt(beforeRepayAmount) / BigInt(2);
+                await this.USDC.connect(this.account_1).transfer(
+                    this.account_2.address,
+                    BigInt(repayAmount)
+                );
+                await this.USDC.connect(this.account_2).approve(
+                    this.sfUSDC.address,
+                    BigInt(repayAmount)
+                );
+                await this.sfUSDC
+                    .connect(this.account_2)
+                    .repayBorrow(BigInt(repayAmount));
+
+                let [, afterRepayAmount] = await this.sfUSDC.getAccountSnapshot(
+                    this.account_2.address
+                );
+
+                expect(
+                    smallNum(
+                        BigInt(beforeRepayAmount) - BigInt(afterRepayAmount),
+                        6
+                    )
+                ).to.be.closeTo(smallNum(repayAmount, 6), 0.01);
+            });
+        });
+
+        describe("repayBorrowBehalf", async function () {
+            it("reverts if no repayAmount", async function () {
+                let [shareAmount, repayAmount] =
+                    await this.sfUSDC.getAccountSnapshot(
+                        this.account_2.address
+                    );
+                repayAmount = BigInt(repayAmount) * BigInt(2);
+
+                await expect(
+                    this.sfUSDC
+                        .connect(this.account_2)
+                        .repayBorrowBehalf(
+                            this.account_1.address,
+                            BigInt(repayAmount)
+                        )
+                ).to.be.revertedWith("no borrows to repay");
+            });
+
+            it("get debt amount", async function () {
+                let [shareAmount, beforeRepayAmount] =
+                    await this.sfUSDC.getAccountSnapshot(
+                        this.account_2.address
+                    );
+                let repayAmount = BigInt(beforeRepayAmount) * BigInt(2);
+                let beforeBal = await this.USDC.balanceOf(
+                    this.account_1.address
+                );
+                await this.USDC.connect(this.account_1).approve(
+                    this.sfUSDC.address,
+                    BigInt(repayAmount)
+                );
+                await this.sfUSDC
+                    .connect(this.account_1)
+                    .repayBorrowBehalf(
+                        this.account_2.address,
+                        BigInt(repayAmount)
+                    );
+                let afterBal = await this.USDC.balanceOf(
+                    this.account_1.address
+                );
+
+                let [, afterRepayAmount] = await this.sfUSDC.getAccountSnapshot(
+                    this.account_2.address
+                );
+                let repaidAmount = BigInt(beforeBal) - BigInt(afterBal);
+
+                expect(smallNum(afterRepayAmount, 6)).to.be.equal(0);
+                expect(smallNum(beforeRepayAmount, 6)).to.be.closeTo(
+                    smallNum(repaidAmount, 6),
+                    0.0001
+                );
             });
         });
     });

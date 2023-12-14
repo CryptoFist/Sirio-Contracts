@@ -35,6 +35,14 @@ interface IMarketPositionManager {
     /// @notice Check if token is listed to market or not.
     function checkListedToken(address _token) external view returns (bool);
 
+    /// @notice Get borrowable underlying token amount by a user.
+    /// @param _account The address of borrower.
+    /// @param _token The address of sfToken.
+    function getBorrowableAmount(
+        address _account,
+        address _token
+    ) external view returns (uint256);
+
     /// @notice Check if seize is allowed.
     /// @param _collateralToken The address of token to be uses as collateral.
     /// @param _borrowToken The address of borrowed token.
@@ -86,7 +94,7 @@ interface IMarketPositionManager {
     ) external view returns (uint256);
 
     /// @notice Check if supplying is allowed and token is listed to market.
-    function validateSupply(address _token) external view;
+    function validateSupply(address _supplier, address _token) external;
 
     event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
 }
