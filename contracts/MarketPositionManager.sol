@@ -89,9 +89,13 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
 
     /// @inheritdoc IMarketPositionManager
     function validateSupply(
+        address _supplier,
         address _token
-    ) external view override onlyValidCaller(_token) {
+    ) external override onlyValidCaller(_token) {
         require(!supplyGuardianPaused[_token], "supplying is paused");
+        if (!accountAssets[_supplier].contains(_token)) {
+            accountAssets[_supplier].add(_token);
+        }
     }
 
     /// @inheritdoc IMarketPositionManager
@@ -199,8 +203,9 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         if (!info.accountMembership[_borrower]) {
             // if borrower didn't ever borrow, nothing else
             info.accountMembership[_borrower] = true;
-            accountAssets[_borrower].add(_token);
-            return true;
+            if (!accountAssets[_borrower].contains(_token)) {
+                accountAssets[_borrower].add(_token);
+            }
         }
 
         uint256 borrowCap = borrowCaps[_token];
@@ -240,6 +245,79 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         return true;
     }
 
+    /// @notice Get borrowable underlying token amount by a user.
+    /// @param _account The address of borrower.
+    /// @param _token The address of sfToken.
+    function getBorrowableAmount(
+        address _account,
+        address _token
+    ) external view override returns (uint256) {
+        uint256 borrowCap = borrowCaps[_token];
+        uint256 totalBorrows = ISFProtocolToken(_token).totalBorrows();
+        address[] memory assets = accountAssets[_account].values();
+        uint256 length = assets.length;
+        if (
+            borrowGuardianPaused[_token] ||
+            (borrowCap > 0 && totalBorrows >= borrowCap)
+        ) {
+            return 0;
+        }
+
+        uint256 totalCollateral = 0;
+        uint256 totalDebt = 0;
+        address account = _account;
+        address token = _token;
+        uint256 borrowTokenPrice;
+        uint256 availableCollateral;
+
+        uint256 accountCollateral;
+        uint256 accountDebt;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 price;
+            address asset = assets[i];
+            (accountCollateral, accountDebt, price) = _calCollateralAndDebt(
+                account,
+                asset,
+                0,
+                0
+            );
+
+            if (asset == token) {
+                borrowTokenPrice = price;
+            }
+
+            totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+        }
+
+        if (!accountAssets[account].contains(token)) {
+            (
+                accountCollateral,
+                accountDebt,
+                borrowTokenPrice
+            ) = _calCollateralAndDebt(account, token, 0, 0);
+
+            totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+        }
+
+        availableCollateral = totalDebt >= totalCollateral
+            ? 0
+            : totalCollateral - totalDebt;
+
+        uint256 borrowableAmount = (availableCollateral * 1e18) /
+            borrowTokenPrice;
+        uint256 poolAmount = ISFProtocolToken(token).getUnderlyingBalance();
+        poolAmount = ISFProtocolToken(token).convertUnderlyingToShare(
+            poolAmount
+        );
+        borrowableAmount = borrowableAmount > poolAmount
+            ? poolAmount
+            : borrowableAmount;
+
+        return ISFProtocolToken(_token).convertToUnderlying(borrowableAmount);
+    }
+
     function _checkValidation(
         address _account,
         address _token,
@@ -248,9 +326,6 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     ) internal view returns (bool) {
         address[] memory assets = accountAssets[_account].values();
         uint256 length = assets.length;
-        if (length == 0) {
-            return true;
-        }
 
         uint256 totalCollateral = 0;
         uint256 totalDebt = 0;
@@ -259,31 +334,72 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         address account = _account;
         address token = _token;
         for (uint256 i = 0; i < length; i++) {
-            ISFProtocolToken asset = ISFProtocolToken(assets[i]);
+            address asset = assets[i];
             (
-                uint256 shareBalance,
-                uint256 borrowedAmount,
-                uint256 exchangeRate
-            ) = asset.getAccountSnapshot(account);
+                uint256 accountCollateral,
+                uint256 accountDebt,
 
-            uint256 tokenPrice = priceOracle.getUnderlyingPrice(address(asset));
-            require(tokenPrice > 0, "price error");
+            ) = _calCollateralAndDebt(
+                    account,
+                    assets[i],
+                    asset == token ? borrowAmount : 0,
+                    asset == token ? redeemAmount : 0
+                );
 
-            // accountCollateral is USD amount of user supplied
-            uint256 accountCollateral = (exchangeRate * shareBalance) / 1e18;
-            accountCollateral = (accountCollateral * tokenPrice) / 1e18;
             totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+        }
 
-            // accountDebt is USD amount of user should pay
-            uint256 accountDebt = (tokenPrice * borrowedAmount) / 1e18;
-            if (address(asset) == token) {
-                accountDebt +=
-                    (tokenPrice * (redeemAmount + borrowAmount)) /
-                    1e18;
-            }
+        if (!accountAssets[account].contains(token)) {
+            (
+                uint256 accountCollateral,
+                uint256 accountDebt,
+
+            ) = _calCollateralAndDebt(
+                    account,
+                    token,
+                    borrowAmount,
+                    redeemAmount
+                );
+
+            totalCollateral += accountCollateral;
             totalDebt += accountDebt;
         }
 
         return totalCollateral > totalDebt;
+    }
+
+    function _calCollateralAndDebt(
+        address _account,
+        address _token,
+        uint256 _borrowAmount,
+        uint256 _redeemAmount
+    )
+        internal
+        view
+        returns (
+            uint256 accountCollateral,
+            uint256 accountDebt,
+            uint256 tokenPrice
+        )
+    {
+        ISFProtocolToken asset = ISFProtocolToken(_token);
+        (
+            uint256 shareBalance,
+            uint256 borrowedAmount,
+            uint256 exchangeRate
+        ) = asset.getAccountSnapshot(_account);
+
+        tokenPrice = priceOracle.getUnderlyingPrice(address(asset));
+        require(tokenPrice > 0, "price error");
+
+        // accountCollateral is USD amount of user supplied
+        accountCollateral = (exchangeRate * shareBalance) / 1e18;
+        accountCollateral = (accountCollateral * tokenPrice) / 1e18;
+
+        // accountDebt is USD amount of user should pay
+        accountDebt =
+            (tokenPrice * (borrowedAmount + _redeemAmount + _borrowAmount)) /
+            1e18;
     }
 }

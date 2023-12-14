@@ -99,6 +99,16 @@ interface ISFProtocolToken {
         address _account
     ) external view returns (uint256);
 
+    /// @notice Convert amount of underlying token to share amount.
+    function convertUnderlyingToShare(
+        uint256 _amount
+    ) external view returns (uint256);
+
+    /// @notice Convert 18 decimals amount to underlying.
+    function convertToUnderlying(
+        uint256 _amount
+    ) external view returns (uint256);
+
     /// @notice Pause contract when critical error occurs.
     /// @dev Only owner can call this function.
     function pause() external;

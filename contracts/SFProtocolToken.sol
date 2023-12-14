@@ -127,7 +127,7 @@ contract SFProtocolToken is
 
         uint256 exchangeRate = _exchangeRateStoredInternal();
         uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
-        return _convertToUnderlying(suppliedAmount);
+        return convertToUnderlying(suppliedAmount);
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -139,11 +139,58 @@ contract SFProtocolToken is
     function getAccountSnapshot(
         address _account
     ) external view override returns (uint256, uint256, uint256) {
-        return (
-            accountBalance[_account],
-            _borrowBalanceStoredInternal(_account),
-            _exchangeRateStoredInternal()
-        );
+        uint256 curBlockNumber = block.number;
+        uint256 totalBorrowsNew = totalBorrows;
+        uint256 totalReservesNew = totalReserves;
+        uint256 borrowIndexNew = borrowIndex;
+        if (accrualBlockNumber != curBlockNumber) {
+            uint256 cashPrior = getUnderlyingBalance();
+            uint256 borrowsPrior = totalBorrows;
+            uint256 reservesPrior = totalReserves;
+            uint256 borrowIndexPrior = borrowIndex;
+
+            uint256 borrowRate = IInterestRateModel(interestRateModel)
+                .getBorrowRate(
+                    convertUnderlyingToShare(cashPrior),
+                    borrowsPrior,
+                    reservesPrior
+                );
+
+            uint256 blockDelta = curBlockNumber - accrualBlockNumber;
+            uint256 simpleInterestFactor = borrowRate * blockDelta;
+            uint256 accumulatedInterests = (simpleInterestFactor *
+                totalBorrows) / 1e18;
+            totalBorrowsNew = totalBorrows + accumulatedInterests;
+            totalReservesNew =
+                (accumulatedInterests * reservesPrior) /
+                1e18 +
+                totalReserves;
+            borrowIndexNew =
+                (simpleInterestFactor * borrowIndexPrior) /
+                1e18 +
+                borrowIndexPrior;
+        }
+
+        BorrowSnapshot memory borrowSnapshot = accountBorrows[_account];
+        uint256 borrowBalance = 0;
+        uint256 exchangeRate = initialExchangeRateMantissa;
+
+        if (borrowSnapshot.principal > 0) {
+            uint256 principalTimesIndex = borrowSnapshot.principal *
+                borrowIndexNew;
+            borrowBalance = principalTimesIndex / borrowSnapshot.interestIndex;
+        }
+
+        if (_totalSupply > 0) {
+            uint256 totalCash = getUnderlyingBalance();
+            totalCash = convertUnderlyingToShare(totalCash);
+            uint256 cashPlusBorrowsMinusReserves = totalCash +
+                totalBorrowsNew -
+                totalReservesNew;
+            exchangeRate = (cashPlusBorrowsMinusReserves * 1e18) / _totalSupply;
+        }
+
+        return (accountBalance[_account], borrowBalance, exchangeRate);
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -157,6 +204,7 @@ contract SFProtocolToken is
     ) external override whenNotPaused {
         require(_underlyingAmount > 0, "invalid supply amount");
         IMarketPositionManager(marketPositionManager).validateSupply(
+            msg.sender,
             address(this)
         );
 
@@ -168,7 +216,7 @@ contract SFProtocolToken is
             _underlyingAmount
         );
 
-        actualSuppliedAmount = _convertUnderlyingToShare(actualSuppliedAmount);
+        actualSuppliedAmount = convertUnderlyingToShare(actualSuppliedAmount);
         uint256 shareAmount = (actualSuppliedAmount * 1e18) / exchangeRate;
         require(shareAmount > 0, "too small for supplying");
 
@@ -202,7 +250,7 @@ contract SFProtocolToken is
         _accrueInterest();
 
         require(
-            getUnderlyingBalance() < _underlyingAmount,
+            getUnderlyingBalance() >= _underlyingAmount,
             "insufficient pool amount to borrow"
         );
 
@@ -316,6 +364,28 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
+    function convertUnderlyingToShare(
+        uint256 _amount
+    ) public view override returns (uint256) {
+        if (underlyingDecimals > 18) {
+            return _amount / 10 ** (underlyingDecimals - 18);
+        } else {
+            return _amount * 10 ** (18 - underlyingDecimals);
+        }
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function convertToUnderlying(
+        uint256 _amount
+    ) public view override returns (uint256) {
+        if (underlyingDecimals < 18) {
+            return _amount / 10 ** (18 - underlyingDecimals);
+        } else {
+            return _amount * 10 ** (underlyingDecimals - 18);
+        }
+    }
+
+    /// @inheritdoc ISFProtocolToken
     function sweepToken(address _token) external override onlyOwner {
         require(_token != underlyingToken, "can not sweep underlying token");
         uint256 balance = IERC20(_token).balanceOf(address(this));
@@ -338,7 +408,7 @@ contract SFProtocolToken is
         // Convert cashBal to 18 decimals and calculate borrowRate.
         uint256 borrowRate = IInterestRateModel(interestRateModel)
             .getBorrowRate(
-                _convertUnderlyingToShare(cashPrior),
+                convertUnderlyingToShare(cashPrior),
                 borrowsPrior,
                 reservesPrior
             );
@@ -425,13 +495,13 @@ contract SFProtocolToken is
             redeemUnderlyingAmount = (redeemShareAmount * exchangeRate) / 1e18;
         } else {
             // wanna redeem exact underlying tokens
-            redeemUnderlyingAmount = _convertUnderlyingToShare(
+            redeemUnderlyingAmount = convertUnderlyingToShare(
                 _underlyingAmount
             );
             redeemShareAmount = (redeemUnderlyingAmount * 1e18) / exchangeRate;
         }
 
-        redeemUnderlyingAmount = _convertToUnderlying(redeemUnderlyingAmount);
+        redeemUnderlyingAmount = convertToUnderlying(redeemUnderlyingAmount);
 
         require(
             getUnderlyingBalance() >= redeemUnderlyingAmount,
@@ -475,7 +545,7 @@ contract SFProtocolToken is
             uint256 totalCash = getUnderlyingBalance();
 
             // totalBorrows and totalReserves are 18 decimals, convert cash decimal to 18.
-            totalCash = _convertUnderlyingToShare(totalCash);
+            totalCash = convertUnderlyingToShare(totalCash);
             uint256 cashPlusBorrowsMinusReserves = totalCash +
                 totalBorrows -
                 totalReserves;
@@ -483,28 +553,6 @@ contract SFProtocolToken is
                 _totalSupply;
 
             return exchangeRate;
-        }
-    }
-
-    /// @notice Convert amount of underlying token to share amount.
-    function _convertUnderlyingToShare(
-        uint256 _amount
-    ) internal view returns (uint256) {
-        if (underlyingDecimals > 18) {
-            return _amount / 10 ** (underlyingDecimals - 18);
-        } else {
-            return _amount * 10 ** (18 - underlyingDecimals);
-        }
-    }
-
-    /// @notice Convert 18 decimals amount to underlying.
-    function _convertToUnderlying(
-        uint256 _amount
-    ) internal view returns (uint256) {
-        if (underlyingDecimals < 18) {
-            return _amount / 10 ** (18 - underlyingDecimals);
-        } else {
-            return _amount * 10 ** (underlyingDecimals - 18);
         }
     }
 
