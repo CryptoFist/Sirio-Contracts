@@ -7,6 +7,7 @@ const {
     getCurrentTimestamp,
     smallNum,
     increaseBlock,
+    year,
 } = require("hardhat-libutils");
 
 const { getDeploymentParam } = require("../scripts/params");
@@ -562,6 +563,237 @@ describe("Sirio Finance Protocol test", function () {
                     0.0001
                 );
             });
+        });
+    });
+
+    describe("liquidateBorrow", function () {
+        it("reverts if caller is borrower", async function () {
+            await expect(
+                this.sfUSDC
+                    .connect(this.account_2)
+                    .liquidateBorrow(
+                        this.account_2.address,
+                        this.sfWETH.address,
+                        BigInt(bigNum(10, 6))
+                    )
+            ).to.be.revertedWith("can not liquidate own borrows");
+        });
+
+        it("reverts if amount is zero", async function () {
+            await expect(
+                this.sfUSDC
+                    .connect(this.account_1)
+                    .liquidateBorrow(
+                        this.account_2.address,
+                        this.sfWETH.address,
+                        0
+                    )
+            ).to.be.revertedWith("invalid liquidate amount");
+        });
+
+        it("borrow WETH", async function () {
+            let borrowableAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_1.address,
+                    this.sfWETH.address
+                );
+            expect(smallNum(borrowableAmount, 18)).to.be.greaterThan(0);
+
+            let feeAmount =
+                (BigInt(borrowableAmount) * BigInt(feeRate.borrowingFeeRate)) /
+                BigInt(10000);
+            let expectAmount = BigInt(borrowableAmount) - BigInt(feeAmount);
+            let beforeBal = await this.WETH.balanceOf(this.account_1.address);
+            await this.sfWETH
+                .connect(this.account_1)
+                .borrow(BigInt(borrowableAmount));
+            let afterBal = await this.WETH.balanceOf(this.account_1.address);
+
+            expect(
+                smallNum(BigInt(afterBal) - BigInt(beforeBal), 18)
+            ).to.be.closeTo(smallNum(expectAmount, 18), 0.001);
+        });
+
+        it("liquidableAmount", async function () {
+            let [, borrowedAmount] = await this.sfWETH.getAccountSnapshot(
+                this.account_1.address
+            );
+            let liquidableAmount =
+                await this.marketPositionManager.getLiquidableAmount(
+                    this.sfWETH.address,
+                    this.account_1.address
+                );
+
+            expect(smallNum(borrowedAmount, 18)).to.be.greaterThan(0);
+            expect(smallNum(liquidableAmount, 18)).to.be.equal(0);
+
+            // pass 2 years
+            let passTime = year * 2;
+            let blockCount = BigInt(passTime) / BigInt(3);
+            await increaseBlock(BigInt(blockCount));
+
+            [, borrowedAmount] = await this.sfWETH.getAccountSnapshot(
+                this.account_1.address
+            );
+            liquidableAmount =
+                await this.marketPositionManager.getLiquidableAmount(
+                    this.sfWETH.address,
+                    this.account_1.address
+                );
+
+            expect(smallNum(borrowedAmount, 18)).to.be.greaterThan(0);
+            expect(smallNum(borrowedAmount, 18)).to.be.equal(
+                smallNum(liquidableAmount, 18)
+            );
+        });
+
+        it("reverts if liquidateAmount is too much", async function () {
+            let wrapAmount = bigNum(5, 18);
+            await this.WETH.connect(this.account_3).deposit({
+                value: BigInt(wrapAmount),
+            });
+
+            await this.WETH.connect(this.account_3).approve(
+                this.sfWETH.address,
+                BigInt(wrapAmount)
+            );
+
+            await expect(
+                this.sfWETH
+                    .connect(this.account_3)
+                    .liquidateBorrow(
+                        this.account_1.address,
+                        this.sfWETH.address,
+                        BigInt(wrapAmount)
+                    )
+            ).to.be.revertedWith("too much to liquidate");
+        });
+
+        it("reverts if borrower doesn't have enough share", async function () {
+            let liquidableAmount =
+                await this.marketPositionManager.getLiquidableAmount(
+                    this.sfWETH.address,
+                    this.account_1.address
+                );
+
+            let liquidableAmounntWithSeizeToken =
+                await this.marketPositionManager.getLiquidableAmountWithSeizeToken(
+                    this.sfWETH.address,
+                    this.sfWETH.address,
+                    this.account_1.address
+                );
+            expect(liquidableAmounntWithSeizeToken).to.be.equal(0);
+
+            await expect(
+                this.sfWETH
+                    .connect(this.account_3)
+                    .liquidateBorrow(
+                        this.account_1.address,
+                        this.sfWETH.address,
+                        BigInt(liquidableAmount)
+                    )
+            ).to.be.revertedWith("insufficient borrower balance for liquidate");
+        });
+
+        it("liquidate and check", async function () {
+            let liquidableAmount =
+                await this.marketPositionManager.getLiquidableAmountWithSeizeToken(
+                    this.sfWETH.address,
+                    this.sfUSDC.address,
+                    this.account_1.address
+                );
+            let beforeBorrowerUSDCShare = await this.sfUSDC.balanceOf(
+                this.account_1.address
+            );
+            let beforeLiquidatorUSDCShare = await this.sfUSDC.balanceOf(
+                this.account_3.address
+            );
+            let beforeWETHBal = await this.WETH.balanceOf(
+                this.account_3.address
+            );
+            let beforeTotalReserves = await this.sfUSDC.totalReserves();
+            await this.sfWETH
+                .connect(this.account_3)
+                .liquidateBorrow(
+                    this.account_1.address,
+                    this.sfUSDC.address,
+                    BigInt(liquidableAmount)
+                );
+            let afterBorrowerUSDCShare = await this.sfUSDC.balanceOf(
+                this.account_1.address
+            );
+            let afterLiquidatorUSDCShare = await this.sfUSDC.balanceOf(
+                this.account_3.address
+            );
+            let afterWETHBal = await this.WETH.balanceOf(
+                this.account_3.address
+            );
+            let afterTotalReserves = await this.sfUSDC.totalReserves();
+
+            expect(smallNum(afterBorrowerUSDCShare, 18)).to.be.closeTo(
+                0,
+                0.000001
+            );
+
+            let liquidatedShare =
+                BigInt(beforeBorrowerUSDCShare) -
+                BigInt(afterBorrowerUSDCShare);
+            let protocolSeizeShareMantissa =
+                await this.sfUSDC.protocolSeizeShareMantissa();
+            let protocolShare =
+                (BigInt(liquidatedShare) * BigInt(protocolSeizeShareMantissa)) /
+                BigInt(bigNum(1, 18));
+            let expectShare = BigInt(liquidatedShare) - BigInt(protocolShare);
+
+            expect(
+                smallNum(
+                    BigInt(afterLiquidatorUSDCShare) -
+                        BigInt(beforeLiquidatorUSDCShare),
+                    18
+                )
+            ).to.be.equal(smallNum(expectShare, 18));
+
+            expect(BigInt(beforeWETHBal) - BigInt(afterWETHBal)).to.be.equal(
+                BigInt(liquidableAmount)
+            );
+            expect(
+                smallNum(
+                    BigInt(afterTotalReserves) - BigInt(beforeTotalReserves),
+                    18
+                )
+            ).to.be.greaterThan(0);
+        });
+    });
+
+    describe("sweepToken", function () {
+        it("reverts if caller is not the owner", async function () {
+            await expect(
+                this.sfUSDC
+                    .connect(this.account_1)
+                    .sweepToken(this.WETH.address)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+
+        it("reverts if try to sweep with underlying token", async function () {
+            await expect(
+                this.sfUSDC.sweepToken(this.USDC.address)
+            ).to.be.revertedWith("can not sweep underlying token");
+        });
+
+        it("sweepToken and check", async function () {
+            let amount = await this.USDC.balanceOf(this.account_1.address);
+            await this.USDC.connect(this.account_1).transfer(
+                this.sfWETH.address,
+                BigInt(amount)
+            );
+
+            let beforeBal = await this.USDC.balanceOf(this.deployer.address);
+            await this.sfWETH.sweepToken(this.USDC.address);
+            let afterBal = await this.USDC.balanceOf(this.deployer.address);
+
+            expect(
+                smallNum(BigInt(afterBal) - BigInt(beforeBal), 6)
+            ).to.be.equal(smallNum(amount, 6));
         });
     });
 });

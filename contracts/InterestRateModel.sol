@@ -4,8 +4,6 @@ pragma solidity ^0.8.17;
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "./interfaces/IInterestRateModel.sol";
 
-import "hardhat/console.sol";
-
 contract InterestRateModel is Ownable2Step, IInterestRateModel {
     /// @notice The approximate number of blocks per year that is assumed by the interest rate model
     uint256 public blocksPerYear;

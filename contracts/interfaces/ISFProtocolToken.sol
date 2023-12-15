@@ -69,7 +69,7 @@ interface ISFProtocolToken {
 
     /// @notice Liquidate borrowed underlying assets instead of borrower.
     /// @param _borrower The address of borrower.
-    /// @param _collateralToken The address of token to be used as collateral.
+    /// @param _collateralToken The address of token to seize.
     /// @param _repayAmount The amount of underlying assert to liquidate.
     function liquidateBorrow(
         address _borrower,

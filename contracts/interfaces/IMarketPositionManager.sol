@@ -43,6 +43,24 @@ interface IMarketPositionManager {
         address _token
     ) external view returns (uint256);
 
+    /// @notice Get liquidable amount with seize token.
+    /// @param _borrowToken The address of borrowed sfToken.
+    /// @param _seizeToken The address of sfToken to seize.
+    /// @param _borrower The address of borrower.
+    function getLiquidableAmountWithSeizeToken(
+        address _borrowToken,
+        address _seizeToken,
+        address _borrower
+    ) external view returns (uint256);
+
+    /// @notice Get liquidable amount.
+    /// @param _borrowToken The address of borrowed sfToken.
+    /// @param _borrower The address of borrower.
+    function getLiquidableAmount(
+        address _borrowToken,
+        address _borrower
+    ) external view returns (uint256);
+
     /// @notice Check if seize is allowed.
     /// @param _collateralToken The address of token to be uses as collateral.
     /// @param _borrowToken The address of borrowed token.
@@ -73,23 +91,23 @@ interface IMarketPositionManager {
 
     /// @notice Check if available to liquidate.
     /// @param _tokenBorrowed The address of borrowed token.
-    /// @param _tokenCollateral The address of token to be used as collateral.
+    /// @param _tokenSeize The address of token to be used as collateral.
     /// @param _borrower The address of the borrower.
     /// @param _liquidateAmount The amount of _tokenCollateral to liquidate.
     function validateLiquidate(
         address _tokenBorrowed,
-        address _tokenCollateral,
+        address _tokenSeize,
         address _borrower,
         uint256 _liquidateAmount
     ) external view;
 
     /// @notice Calculate number of tokens of collateral asset to seize given an underlying amount
     /// @param _borrowToken The address of the borrowed token
-    /// @param _collateralToken The address of the collateral token
+    /// @param _seizeToken The address of the collateral token
     /// @param _repayAmount The amount of sfTokenBorrowed underlying to convert into sfTokenCollateral tokens
     function liquidateCalculateSeizeTokens(
         address _borrowToken,
-        address _collateralToken,
+        address _seizeToken,
         uint256 _repayAmount
     ) external view returns (uint256);
 
