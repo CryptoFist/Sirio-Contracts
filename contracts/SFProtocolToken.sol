@@ -13,8 +13,6 @@ import "./interfaces/ISFProtocolToken.sol";
 import "./interfaces/IInterestRateModel.sol";
 import "./interfaces/IMarketPositionManager.sol";
 
-import "hardhat/console.sol";
-
 contract SFProtocolToken is
     ERC20Upgradeable,
     Ownable2StepUpgradeable,
