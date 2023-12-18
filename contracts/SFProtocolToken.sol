@@ -117,6 +117,17 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
+    function supplyRatePerBlock() external view override returns (uint256) {
+        return
+            IInterestRateModel(interestRateModel).getSupplyRate(
+                getUnderlyingBalance(),
+                totalBorrows,
+                totalReserves,
+                reserveFactorMantissa
+            );
+    }
+
+    /// @inheritdoc ISFProtocolToken
     function getSuppliedAmount(
         address _account
     ) external view override returns (uint256) {

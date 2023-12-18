@@ -102,6 +102,68 @@ describe("Sirio Finance Protocol test", function () {
         console.log("deployed successfully!");
     });
 
+    describe("pause and check functions", function () {
+        describe("pause", function () {
+            it("reverts if caller is not the owner", async function () {
+                await expect(
+                    this.sfUSDC.connect(this.account_1).pause()
+                ).to.be.revertedWith("Ownable: caller is not the owner");
+            });
+
+            it("pause", async function () {
+                await this.sfUSDC.pause();
+            });
+
+            it("reverts if already paused", async function () {
+                await expect(this.sfUSDC.pause()).to.be.revertedWith(
+                    "Pausable: paused"
+                );
+            });
+        });
+
+        describe("check functions that it reverts", function () {
+            it("supplyUnderlying", async function () {
+                await expect(
+                    this.sfUSDC.supplyUnderlying(100)
+                ).to.be.revertedWith("Pausable: paused");
+            });
+
+            it("redeem", async function () {
+                await expect(this.sfUSDC.redeem(100)).to.be.revertedWith(
+                    "Pausable: paused"
+                );
+
+                await expect(
+                    this.sfUSDC.redeemExactUnderlying(1000)
+                ).to.be.revertedWith("Pausable: paused");
+            });
+
+            it("borrow", async function () {
+                await expect(this.sfUSDC.borrow(1000)).to.be.revertedWith(
+                    "Pausable: paused"
+                );
+            });
+        });
+    });
+
+    describe("unpause", function () {
+        it("reverts if caller is not the owner", async function () {
+            await expect(
+                this.sfUSDC.connect(this.account_1).unpause()
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+
+        it("unpause", async function () {
+            await this.sfUSDC.unpause();
+        });
+
+        it("reverts if already unpaused", async function () {
+            await expect(this.sfUSDC.unpause()).to.be.revertedWith(
+                "Pausable: not paused"
+            );
+        });
+    });
+
     describe("supply underlying tokens", function () {
         let supplyAmount;
         it("buy some USDC for supply", async function () {
@@ -123,6 +185,10 @@ describe("Sirio Finance Protocol test", function () {
                 this.sfUSDC.address,
                 BigInt(supplyAmount)
             );
+
+            expect(
+                await this.sfUSDC.getSuppliedAmount(this.account_1.address)
+            ).to.be.equal(0);
         });
 
         it("reverts if supply amount is invalid", async function () {
@@ -395,10 +461,24 @@ describe("Sirio Finance Protocol test", function () {
             let beforeTotalBorrows = await this.sfUSDC.totalBorrows();
             let beforeTotalReserves = await this.sfUSDC.totalReserves();
             let beforeBorrowIndex = await this.sfUSDC.borrowIndex();
+            let beforeSupplyRate = await this.sfUSDC.supplyRatePerBlock();
+            expect(
+                await this.marketPositionManager.checkMembership(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                )
+            ).to.be.equal(false);
             await this.sfUSDC
                 .connect(this.account_2)
                 .borrow(BigInt(borrowableUSDCAmount));
+            expect(
+                await this.marketPositionManager.checkMembership(
+                    this.account_2.address,
+                    this.sfUSDC.address
+                )
+            ).to.be.equal(true);
 
+            let afterSupplyRate = await this.sfUSDC.supplyRatePerBlock();
             let afterUSDCBal = await this.USDC.balanceOf(
                 this.account_2.address
             );
@@ -442,6 +522,10 @@ describe("Sirio Finance Protocol test", function () {
                     this.sfUSDC.address
                 )
             ).to.be.equal(0);
+
+            expect(Number(afterSupplyRate)).to.be.greaterThan(
+                Number(beforeSupplyRate)
+            );
         });
 
         it("increase blockNumber and check borrowAmount", async function () {
@@ -645,6 +729,12 @@ describe("Sirio Finance Protocol test", function () {
             expect(smallNum(borrowedAmount, 18)).to.be.equal(
                 smallNum(liquidableAmount, 18)
             );
+        });
+
+        it("reverts borrow if borrow amount exceeds collateral limit", async function () {
+            await expect(
+                this.sfWETH.connect(this.account_1).borrow(bigNum(100, 18))
+            ).to.be.revertedWith("under collateralized");
         });
 
         it("reverts if liquidateAmount is too much", async function () {
