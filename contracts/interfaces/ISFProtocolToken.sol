@@ -99,6 +99,10 @@ interface ISFProtocolToken {
         address _account
     ) external view returns (uint256);
 
+    /// @notice Returns the current per-block borrow interest rate for this cToken
+    /// @return The supply interest rate per block, scaled by 1e18
+    function borrowRatePerBlock() external view returns (uint256);
+
     /// @notice Returns the current per-block supply interest rate for this cToken
     /// @return The supply interest rate per block, scaled by 1e18
     function supplyRatePerBlock() external view returns (uint256);
@@ -121,11 +125,7 @@ interface ISFProtocolToken {
     /// @dev Only owner can call this function.
     function unpause() external;
 
-    event InterestAccrued(
-        uint256 cashPrior,
-        uint256 interestAccumulated,
-        uint256 totalBorrows
-    );
+    event InterestAccrued();
 
     event UnderlyingSupplied(
         address supplier,

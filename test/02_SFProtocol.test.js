@@ -886,4 +886,70 @@ describe("Sirio Finance Protocol test", function () {
             ).to.be.equal(smallNum(amount, 6));
         });
     });
+
+    describe("check fetch data", function () {
+        it("supply & borrow USDC", async function () {
+            // supply USDC by account_1
+            await this.dexRouter
+                .connect(this.account_1)
+                .swapExactETHForTokens(
+                    0,
+                    [param.WETHAddress, this.USDC.address],
+                    this.account_1.address,
+                    BigInt(await getCurrentTimestamp()) + BigInt(100),
+                    { value: bigNum(1, 18) }
+                );
+
+            let supplyAmount = await this.USDC.balanceOf(
+                this.account_1.address
+            );
+            console.log("supplied amount: ", smallNum(supplyAmount, 6));
+            await this.USDC.connect(this.account_1).approve(
+                this.sfUSDC.address,
+                BigInt(supplyAmount)
+            );
+            await this.sfUSDC
+                .connect(this.account_1)
+                .supplyUnderlying(BigInt(supplyAmount));
+
+            // borrow USDC by account_3
+            let borrowAmount =
+                await this.marketPositionManager.getBorrowableAmount(
+                    this.account_3.address,
+                    this.sfUSDC.address
+                );
+            console.log("borrowableAmount: ", smallNum(borrowAmount, 6));
+            borrowAmount = BigInt(borrowAmount) / BigInt(2);
+
+            await this.sfUSDC
+                .connect(this.account_3)
+                .borrow(BigInt(borrowAmount));
+
+            console.log(await this.sfUSDC.supplyRatePerBlock());
+        });
+        // it("supplied amount", async function () {
+        //     let beforeSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+        //         this.account_1.address
+        //     );
+        //     let [, beforeTotalReserves] = await this.sfUSDC.getUpdatedRates();
+
+        //     await increaseBlock(param.interestRate.blocksPerYear * 10);
+
+        //     let afterSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+        //         this.account_1.address
+        //     );
+        //     let [, afterTotalReserves] = await this.sfUSDC.getUpdatedRates();
+
+        //     console.log(
+        //         "before and after supplied amount: ",
+        //         smallNum(beforeSuppliedAmount, 6),
+        //         smallNum(afterSuppliedAmount, 6)
+        //     );
+        //     // let supplyRate = await this.sfUSDC.supplyRatePerBlock();
+        //     // let borrowRate = await this.sfUSDC.borrowRatePerBlock();
+
+        //     // console.log("supplyRate: ", smallNum(supplyRate, 18));
+        //     // console.log("borrowRate: ", borrowRate);
+        // });
+    });
 });
