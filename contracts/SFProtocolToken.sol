@@ -13,8 +13,6 @@ import "./interfaces/ISFProtocolToken.sol";
 import "./interfaces/IInterestRateModel.sol";
 import "./interfaces/IMarketPositionManager.sol";
 
-import "hardhat/console.sol";
-
 contract SFProtocolToken is
     ERC20Upgradeable,
     Ownable2StepUpgradeable,
@@ -256,8 +254,10 @@ contract SFProtocolToken is
             borrower,
             borrowIndex
         );
-        uint256 accountBorrowsNew = accountBorrowsPrev + _underlyingAmount;
-        uint256 totalBorrowsNew = totalBorrows + _underlyingAmount;
+        uint256 accountBorrowsNew = accountBorrowsPrev +
+            convertUnderlyingToShare(_underlyingAmount);
+        uint256 totalBorrowsNew = totalBorrows +
+            convertUnderlyingToShare(_underlyingAmount);
 
         accountBorrows[borrower].principal = accountBorrowsNew;
         accountBorrows[borrower].interestIndex = borrowIndex;
@@ -432,13 +432,15 @@ contract SFProtocolToken is
             _borrower,
             borrowIndex
         );
-        uint256 repayAmountFinal = _repayAmount > accountBorrowsPrior
-            ? accountBorrowsPrior
+        uint256 repayAmountFinal = convertUnderlyingToShare(_repayAmount) >
+            accountBorrowsPrior
+            ? convertToUnderlying(accountBorrowsPrior)
             : _repayAmount;
 
         require(repayAmountFinal > 0, "no borrows to repay");
 
         uint256 actualRepayAmount = _doTransferIn(_payer, repayAmountFinal);
+        actualRepayAmount = convertUnderlyingToShare(actualRepayAmount);
         uint256 accountBorrowsNew = accountBorrowsPrior - actualRepayAmount;
         uint256 totalBorrowsNew = totalBorrows - actualRepayAmount;
 
@@ -665,9 +667,9 @@ contract SFProtocolToken is
             1e18;
         totalBorrowsNew = totalBorrows + accumulatedInterests;
         totalReservesNew =
-            (accumulatedInterests * reservesPrior) /
+            (accumulatedInterests * reserveFactorMantissa) /
             1e18 +
-            totalReserves;
+            reservesPrior;
         borrowIndexNew =
             (simpleInterestFactor * borrowIndexPrior) /
             1e18 +

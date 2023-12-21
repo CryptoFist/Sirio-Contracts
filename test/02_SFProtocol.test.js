@@ -498,7 +498,7 @@ describe("Sirio Finance Protocol test", function () {
                 BigInt(afterTotalReserves) - BigInt(beforeTotalReserves);
 
             let feeAmount =
-                (BigInt(borrowableUSDCAmount) *
+                (BigInt(bigNum(borrowableUSDCAmount, 12)) *
                     BigInt(feeRate.borrowingFeeRate)) /
                 BigInt(10000);
             let expectAmount = BigInt(borrowedAmount) - BigInt(feeAmount);
@@ -507,13 +507,16 @@ describe("Sirio Finance Protocol test", function () {
                 smallNum(beforeBorrowIndex, 18)
             );
 
-            expect(BigInt(receviedUSDC)).to.be.equal(BigInt(expectAmount));
-            expect(BigInt(totalBorrows)).to.be.equal(
-                BigInt(borrowableUSDCAmount)
+            expect(smallNum(receviedUSDC, 6)).to.be.closeTo(
+                smallNum(expectAmount, 18),
+                0.0001
+            );
+            expect(smallNum(totalBorrows, 18)).to.be.equal(
+                smallNum(borrowableUSDCAmount, 6)
             );
             expect(BigInt(totalReserves)).to.be.equal(BigInt(0));
-            expect(BigInt(borrowedAmount)).to.be.equal(
-                BigInt(borrowableUSDCAmount)
+            expect(smallNum(borrowedAmount, 18)).to.be.equal(
+                smallNum(borrowableUSDCAmount, 6)
             );
 
             expect(
@@ -569,7 +572,10 @@ describe("Sirio Finance Protocol test", function () {
                     await this.sfUSDC.getAccountSnapshot(
                         this.account_2.address
                     );
-                let repayAmount = BigInt(beforeRepayAmount) / BigInt(2);
+                let repayAmount =
+                    BigInt(beforeRepayAmount) /
+                    BigInt(bigNum(1, 12)) /
+                    BigInt(2);
                 await this.USDC.connect(this.account_1).transfer(
                     this.account_2.address,
                     BigInt(repayAmount)
@@ -589,7 +595,7 @@ describe("Sirio Finance Protocol test", function () {
                 expect(
                     smallNum(
                         BigInt(beforeRepayAmount) - BigInt(afterRepayAmount),
-                        6
+                        18
                     )
                 ).to.be.closeTo(smallNum(repayAmount, 6), 0.01);
             });
@@ -641,8 +647,11 @@ describe("Sirio Finance Protocol test", function () {
                 );
                 let repaidAmount = BigInt(beforeBal) - BigInt(afterBal);
 
-                expect(smallNum(afterRepayAmount, 6)).to.be.equal(0);
-                expect(smallNum(beforeRepayAmount, 6)).to.be.closeTo(
+                expect(smallNum(afterRepayAmount, 18)).to.be.closeTo(
+                    0,
+                    0.000001
+                );
+                expect(smallNum(beforeRepayAmount, 18)).to.be.closeTo(
                     smallNum(repaidAmount, 6),
                     0.0001
                 );
@@ -925,31 +934,42 @@ describe("Sirio Finance Protocol test", function () {
                 .connect(this.account_3)
                 .borrow(BigInt(borrowAmount));
 
-            console.log(await this.sfUSDC.supplyRatePerBlock());
+            let supplyRate = await this.sfUSDC.supplyRatePerBlock();
+            console.log(supplyRate);
+            expect(Number(supplyRate)).to.be.greaterThan(0);
         });
-        // it("supplied amount", async function () {
-        //     let beforeSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
-        //         this.account_1.address
-        //     );
-        //     let [, beforeTotalReserves] = await this.sfUSDC.getUpdatedRates();
 
-        //     await increaseBlock(param.interestRate.blocksPerYear * 10);
+        it("supplied amount", async function () {
+            let beforeSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+                this.account_1.address
+            );
+            let [, beforeTotalReserves] = await this.sfUSDC.getUpdatedRates();
 
-        //     let afterSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
-        //         this.account_1.address
-        //     );
-        //     let [, afterTotalReserves] = await this.sfUSDC.getUpdatedRates();
+            await increaseBlock(param.interestRate.blocksPerYear);
 
-        //     console.log(
-        //         "before and after supplied amount: ",
-        //         smallNum(beforeSuppliedAmount, 6),
-        //         smallNum(afterSuppliedAmount, 6)
-        //     );
-        //     // let supplyRate = await this.sfUSDC.supplyRatePerBlock();
-        //     // let borrowRate = await this.sfUSDC.borrowRatePerBlock();
+            let afterSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+                this.account_1.address
+            );
+            let [, afterTotalReserves] = await this.sfUSDC.getUpdatedRates();
 
-        //     // console.log("supplyRate: ", smallNum(supplyRate, 18));
-        //     // console.log("borrowRate: ", borrowRate);
-        // });
+            console.log(
+                "before and after supplied amount: ",
+                smallNum(beforeSuppliedAmount, 6),
+                smallNum(afterSuppliedAmount, 6)
+            );
+
+            let rewards =
+                BigInt(afterSuppliedAmount) - BigInt(beforeSuppliedAmount);
+
+            let supplyRate = await this.sfUSDC.supplyRatePerBlock();
+            let borrowRate = await this.sfUSDC.borrowRatePerBlock();
+
+            console.log(smallNum(rewards, 6));
+            console.log(
+                BigInt(supplyRate),
+                BigInt(borrowRate),
+                BigInt(supplyRate) - BigInt(borrowRate)
+            );
+        });
     });
 });
