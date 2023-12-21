@@ -22,6 +22,11 @@ module.exports = {
             chainId: 295,
             accounts: [process.env.DEPLOYER_WALLET],
         },
+        hedera_testnet: {
+            url: "https://testnet.hashio.io/api",
+            chainId: 296,
+            accounts: [process.env.DEPLOYER_WALLET],
+        },
     },
     solidity: {
         compilers: [
