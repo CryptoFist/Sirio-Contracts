@@ -2,12 +2,40 @@ const { ethers } = require("hardhat");
 
 const DEPLOYMENT_PARAM = {
     hedera_mainnet: {
-        dexRouterV2Address: "0x00000000000000000000000000000000002e7a5d",
+        dexRouterV2Address: "0x00000000000000000000000000000000002e7a5d", // SaucerSwap
         WBTCAddress: "0x0000000000000000000000000000000000101afb",
         WETHAddress: "0x000000000000000000000000000000000008437c",
         WHBARAddress: "0x0000000000000000000000000000000000163b5a",
         HBARXAddress: "0x00000000000000000000000000000000000cba44",
         USDCAddress: "0x000000000000000000000000000000000006f89a",
+        maxLiquidateRate: 10000, // 100%
+        initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
+        interestRate: {
+            blocksPerYear: 365 * 24 * 60 * 60,
+            baseRatePerYear: ethers.utils.parseEther("0.02"),
+            multiplerPerYear: ethers.utils.parseEther("0.225"),
+            jumpMultiplierPerYear: ethers.utils.parseEther("1.25"),
+            kink: ethers.utils.parseEther("0.8"),
+            name: "MediumRateModel",
+        },
+    },
+    hedera_testnet: {
+        dexRouterV2Address: "0x000000000000000000000000000000000000e8df", // SaucerSwap
+        WBTCAddress: "0x0000000000000000000000000000000000101afb",
+        WETHAddress: "0x000000000000000000000000000000000008437c",
+        WHBARAddress: "0x0000000000000000000000000000000000163b5a",
+        HBARXAddress: "0x00000000000000000000000000000000000cba44",
+        USDCAddress: "0x000000000000000000000000000000000006f89a",
+        maxLiquidateRate: 10000, // 100%
+        initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
+        interestRate: {
+            blocksPerYear: 365 * 24 * 60 * 60,
+            baseRatePerYear: ethers.utils.parseEther("0.02"),
+            multiplerPerYear: ethers.utils.parseEther("0.225"),
+            jumpMultiplierPerYear: ethers.utils.parseEther("1.25"),
+            kink: ethers.utils.parseEther("0.8"),
+            name: "MediumRateModel",
+        },
     },
     hardhat: {
         dexRouterV2Address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
