@@ -118,12 +118,32 @@ contract SFProtocolToken is
 
     /// @inheritdoc ISFProtocolToken
     function supplyRatePerBlock() external view override returns (uint256) {
+        (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+
+        ) = getUpdatedRates();
         return
             IInterestRateModel(interestRateModel).getSupplyRate(
                 getUnderlyingBalance(),
-                totalBorrows,
-                totalReserves,
+                totalBorrowsNew,
+                totalReservesNew,
                 reserveFactorMantissa
+            );
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function borrowRatePerBlock() external view override returns (uint256) {
+        (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+
+        ) = getUpdatedRates();
+        return
+            IInterestRateModel(interestRateModel).getBorrowRate(
+                getUnderlyingBalance(),
+                totalBorrowsNew,
+                totalReservesNew
             );
     }
 
@@ -134,72 +154,36 @@ contract SFProtocolToken is
         uint256 balance = accountBalance[_account];
         if (balance == 0) return 0;
 
-        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 exchangeRate = getExchangeRateStored();
         uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
         return convertToUnderlying(suppliedAmount);
     }
 
     /// @inheritdoc ISFProtocolToken
-    function getExchangeRateStored() external view override returns (uint256) {
-        return _exchangeRateStoredInternal();
+    function getExchangeRateStored() public view override returns (uint256) {
+        (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+
+        ) = getUpdatedRates();
+        return _exchangeRateStoredInternal(totalBorrowsNew, totalReservesNew);
     }
 
     /// @inheritdoc ISFProtocolToken
     function getAccountSnapshot(
         address _account
     ) external view override returns (uint256, uint256, uint256) {
-        uint256 curBlockNumber = block.number;
-        uint256 totalBorrowsNew = totalBorrows;
-        uint256 totalReservesNew = totalReserves;
-        uint256 borrowIndexNew = borrowIndex;
-        if (accrualBlockNumber != curBlockNumber) {
-            uint256 cashPrior = getUnderlyingBalance();
-            uint256 borrowsPrior = totalBorrows;
-            uint256 reservesPrior = totalReserves;
-            uint256 borrowIndexPrior = borrowIndex;
+        (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+            uint256 borrowIndexNew
+        ) = getUpdatedRates();
 
-            uint256 borrowRate = IInterestRateModel(interestRateModel)
-                .getBorrowRate(
-                    convertUnderlyingToShare(cashPrior),
-                    borrowsPrior,
-                    reservesPrior
-                );
-
-            uint256 blockDelta = curBlockNumber - accrualBlockNumber;
-            uint256 simpleInterestFactor = borrowRate * blockDelta;
-            uint256 accumulatedInterests = (simpleInterestFactor *
-                totalBorrows) / 1e18;
-            totalBorrowsNew = totalBorrows + accumulatedInterests;
-            totalReservesNew =
-                (accumulatedInterests * reservesPrior) /
-                1e18 +
-                totalReserves;
-            borrowIndexNew =
-                (simpleInterestFactor * borrowIndexPrior) /
-                1e18 +
-                borrowIndexPrior;
-        }
-
-        BorrowSnapshot memory borrowSnapshot = accountBorrows[_account];
-        uint256 borrowBalance = 0;
-        uint256 exchangeRate = initialExchangeRateMantissa;
-
-        if (borrowSnapshot.principal > 0) {
-            uint256 principalTimesIndex = borrowSnapshot.principal *
-                borrowIndexNew;
-            borrowBalance = principalTimesIndex / borrowSnapshot.interestIndex;
-        }
-
-        if (_totalSupply > 0) {
-            uint256 totalCash = getUnderlyingBalance();
-            totalCash = convertUnderlyingToShare(totalCash);
-            uint256 cashPlusBorrowsMinusReserves = totalCash +
-                totalBorrowsNew -
-                totalReservesNew;
-            exchangeRate = (cashPlusBorrowsMinusReserves * 1e18) / _totalSupply;
-        }
-
-        return (accountBalance[_account], borrowBalance, exchangeRate);
+        return (
+            accountBalance[_account],
+            _borrowBalanceStoredInternal(_account, borrowIndexNew),
+            _exchangeRateStoredInternal(totalBorrowsNew, totalReservesNew)
+        );
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -219,7 +203,10 @@ contract SFProtocolToken is
 
         _accrueInterest();
 
-        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
+        );
         uint256 actualSuppliedAmount = _doTransferIn(
             msg.sender,
             _underlyingAmount
@@ -263,9 +250,14 @@ contract SFProtocolToken is
             "insufficient pool amount to borrow"
         );
 
-        uint256 accountBorrowsPrev = _borrowBalanceStoredInternal(borrower);
-        uint256 accountBorrowsNew = accountBorrowsPrev + _underlyingAmount;
-        uint256 totalBorrowsNew = totalBorrows + _underlyingAmount;
+        uint256 accountBorrowsPrev = _borrowBalanceStoredInternal(
+            borrower,
+            borrowIndex
+        );
+        uint256 accountBorrowsNew = accountBorrowsPrev +
+            convertUnderlyingToShare(_underlyingAmount);
+        uint256 totalBorrowsNew = totalBorrows +
+            convertUnderlyingToShare(_underlyingAmount);
 
         accountBorrows[borrower].principal = accountBorrowsNew;
         accountBorrows[borrower].interestIndex = borrowIndex;
@@ -408,40 +400,18 @@ contract SFProtocolToken is
         uint256 curBlockNumber = block.number;
         if (accrualBlockNumber == curBlockNumber) return;
 
-        uint256 cashPrior = getUnderlyingBalance();
-        uint256 borrowsPrior = totalBorrows;
-        uint256 reservesPrior = totalReserves;
-        uint256 borrowIndexPrior = borrowIndex;
-
-        // totalBorrows and totalReserves's decimal are 18.
-        // Convert cashBal to 18 decimals and calculate borrowRate.
-        uint256 borrowRate = IInterestRateModel(interestRateModel)
-            .getBorrowRate(
-                convertUnderlyingToShare(cashPrior),
-                borrowsPrior,
-                reservesPrior
-            );
-
-        require(borrowRate <= borrowRateMaxMantissa, "borrow rate is too high");
-
-        uint256 blockDelta = curBlockNumber - accrualBlockNumber;
-        uint256 simpleInterestFactor = borrowRate * blockDelta;
-        uint256 accumulatedInterests = (simpleInterestFactor * totalBorrows) /
-            1e18;
-        uint256 totalBorrowsNew = totalBorrows + accumulatedInterests;
-        uint256 totalReservesNew = (accumulatedInterests * reservesPrior) /
-            1e18 +
-            totalReserves;
-        uint256 borrowIndexNew = (simpleInterestFactor * borrowIndexPrior) /
-            1e18 +
-            borrowIndexPrior;
+        (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+            uint256 borrowIndexNew
+        ) = getUpdatedRates();
 
         accrualBlockNumber = curBlockNumber;
         totalBorrows = totalBorrowsNew;
         totalReserves = totalReservesNew;
         borrowIndex = borrowIndexNew;
 
-        emit InterestAccrued(cashPrior, accumulatedInterests, totalBorrowsNew);
+        emit InterestAccrued();
     }
 
     /// @notice Payer repays a borrow belonging to borrower
@@ -458,14 +428,19 @@ contract SFProtocolToken is
             address(this)
         );
 
-        uint256 accountBorrowsPrior = _borrowBalanceStoredInternal(_borrower);
-        uint256 repayAmountFinal = _repayAmount > accountBorrowsPrior
-            ? accountBorrowsPrior
+        uint256 accountBorrowsPrior = _borrowBalanceStoredInternal(
+            _borrower,
+            borrowIndex
+        );
+        uint256 repayAmountFinal = convertUnderlyingToShare(_repayAmount) >
+            accountBorrowsPrior
+            ? convertToUnderlying(accountBorrowsPrior)
             : _repayAmount;
 
         require(repayAmountFinal > 0, "no borrows to repay");
 
         uint256 actualRepayAmount = _doTransferIn(_payer, repayAmountFinal);
+        actualRepayAmount = convertUnderlyingToShare(actualRepayAmount);
         uint256 accountBorrowsNew = accountBorrowsPrior - actualRepayAmount;
         uint256 totalBorrowsNew = totalBorrows - actualRepayAmount;
 
@@ -492,7 +467,10 @@ contract SFProtocolToken is
     ) internal {
         require(_shareAmount != 0 || _underlyingAmount != 0, "invalid amount");
         _accrueInterest();
-        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
+        );
 
         uint256 redeemUnderlyingAmount = 0;
         uint256 redeemShareAmount = 0;
@@ -540,12 +518,10 @@ contract SFProtocolToken is
     /// @notice Caculate ExchangeRate
     /// @dev totalSuppliedAmount = totalAssetAmountInPool + totalBorrows - totalReserves
     /// @dev exchageRate = totalSuppliedAmount / totalShareAmount
-    function _exchangeRateStoredInternal()
-        internal
-        view
-        virtual
-        returns (uint256)
-    {
+    function _exchangeRateStoredInternal(
+        uint256 _totalBorrows,
+        uint256 _totalReserves
+    ) internal view virtual returns (uint256) {
         if (_totalSupply == 0) {
             // If there are no tokens minted: exchangeRate = initialExchangeRate
             return initialExchangeRateMantissa;
@@ -556,8 +532,8 @@ contract SFProtocolToken is
             // totalBorrows and totalReserves are 18 decimals, convert cash decimal to 18.
             totalCash = convertUnderlyingToShare(totalCash);
             uint256 cashPlusBorrowsMinusReserves = totalCash +
-                totalBorrows -
-                totalReserves;
+                _totalBorrows -
+                _totalReserves;
             uint256 exchangeRate = (cashPlusBorrowsMinusReserves * 1e18) /
                 _totalSupply;
 
@@ -598,7 +574,8 @@ contract SFProtocolToken is
     /// @param _account The address whose balance should be calculated.
     /// @return The calculated balance.
     function _borrowBalanceStoredInternal(
-        address _account
+        address _account,
+        uint256 _borrowIndex
     ) internal view returns (uint256) {
         BorrowSnapshot memory borrowSnapshot = accountBorrows[_account];
 
@@ -608,7 +585,7 @@ contract SFProtocolToken is
 
         // Calculate new borrow balance using the interest index:
         // recentBorrowBalance = borrower.borrowBalance * market.borrowIndex / borrower.borrowIndex
-        uint256 principalTimesIndex = borrowSnapshot.principal * borrowIndex;
+        uint256 principalTimesIndex = borrowSnapshot.principal * _borrowIndex;
         return principalTimesIndex / borrowSnapshot.interestIndex;
     }
 
@@ -636,7 +613,10 @@ contract SFProtocolToken is
             protocolSeizeShareMantissa) / 1e18;
         uint256 seizeAmountForLiquidator = _seizeAmount -
             seizeAmountForProtocol;
-        uint256 exchangeRate = _exchangeRateStoredInternal();
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
+        );
         uint256 addReserveAmount = (exchangeRate * seizeAmountForProtocol) /
             1e18;
 
@@ -652,5 +632,47 @@ contract SFProtocolToken is
             seizeAmountForProtocol,
             totalReserves
         );
+    }
+
+    function getUpdatedRates()
+        public
+        view
+        returns (
+            uint256 totalBorrowsNew,
+            uint256 totalReservesNew,
+            uint256 borrowIndexNew
+        )
+    {
+        uint256 curBlockNumber = block.number;
+
+        if (curBlockNumber == accrualBlockNumber) {
+            return (totalBorrows, totalReserves, borrowIndex);
+        }
+
+        uint256 cashPrior = getUnderlyingBalance();
+        uint256 borrowsPrior = totalBorrows;
+        uint256 reservesPrior = totalReserves;
+        uint256 borrowIndexPrior = borrowIndex;
+
+        uint256 borrowRate = IInterestRateModel(interestRateModel)
+            .getBorrowRate(
+                convertUnderlyingToShare(cashPrior),
+                borrowsPrior,
+                reservesPrior
+            );
+
+        uint256 blockDelta = curBlockNumber - accrualBlockNumber;
+        uint256 simpleInterestFactor = borrowRate * blockDelta;
+        uint256 accumulatedInterests = (simpleInterestFactor * totalBorrows) /
+            1e18;
+        totalBorrowsNew = totalBorrows + accumulatedInterests;
+        totalReservesNew =
+            (accumulatedInterests * reserveFactorMantissa) /
+            1e18 +
+            reservesPrior;
+        borrowIndexNew =
+            (simpleInterestFactor * borrowIndexPrior) /
+            1e18 +
+            borrowIndexPrior;
     }
 }
