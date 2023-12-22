@@ -28,6 +28,9 @@ contract SFProtocolToken is
     /// @notice Borrowed underlying token amount per user.
     mapping(address => BorrowSnapshot) private accountBorrows;
 
+    /// @notice Supplied underlying token amount per user.
+    mapping(address => SupplySnapshot) private accountSupplies;
+
     /// @notice Information for feeRate.
     FeeRate public feeRate;
 
@@ -66,6 +69,9 @@ contract SFProtocolToken is
 
     /// @notice Share of seized collateral that is added to reserves
     uint256 public protocolSeizeShareMantissa;
+
+    /// @notice Total claimed underlying token amount.
+    uint256 public totalClaimed;
 
     /// @notice 100% = 10000
     uint16 public FEERATE_FIXED_POINT;
@@ -125,7 +131,7 @@ contract SFProtocolToken is
         ) = getUpdatedRates();
         return
             IInterestRateModel(interestRateModel).getSupplyRate(
-                getUnderlyingBalance(),
+                getUnderlyingBalance() + totalClaimed,
                 totalBorrowsNew,
                 totalReservesNew,
                 reserveFactorMantissa
@@ -141,7 +147,7 @@ contract SFProtocolToken is
         ) = getUpdatedRates();
         return
             IInterestRateModel(interestRateModel).getBorrowRate(
-                getUnderlyingBalance(),
+                getUnderlyingBalance() + totalClaimed,
                 totalBorrowsNew,
                 totalReservesNew
             );
@@ -150,12 +156,13 @@ contract SFProtocolToken is
     /// @inheritdoc ISFProtocolToken
     function getSuppliedAmount(
         address _account
-    ) external view override returns (uint256) {
+    ) public view override returns (uint256) {
         uint256 balance = accountBalance[_account];
         if (balance == 0) return 0;
 
         uint256 exchangeRate = getExchangeRateStored();
         uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
+        suppliedAmount -= accountSupplies[_account].claimed;
         return convertToUnderlying(suppliedAmount);
     }
 
@@ -211,6 +218,8 @@ contract SFProtocolToken is
             msg.sender,
             _underlyingAmount
         );
+
+        accountSupplies[msg.sender].principal += actualSuppliedAmount;
 
         actualSuppliedAmount = convertUnderlyingToShare(actualSuppliedAmount);
         uint256 shareAmount = (actualSuppliedAmount * 1e18) / exchangeRate;
@@ -275,6 +284,41 @@ contract SFProtocolToken is
             accountBorrowsNew,
             totalBorrows
         );
+    }
+
+    /// @notice Get claimableInterests amount.
+    function getClaimableInterests(
+        address _claimer
+    ) public view returns (uint256) {
+        SupplySnapshot memory supplySnapshot = accountSupplies[_claimer];
+        uint256 suppliedAmount = supplySnapshot.principal -
+            supplySnapshot.claimed;
+        uint256 currentAmount = getSuppliedAmount(_claimer);
+        uint256 claimableInterests = currentAmount - suppliedAmount;
+
+        return claimableInterests;
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function claimInterests() external override {
+        address claimer = msg.sender;
+        SupplySnapshot storage supplySnapshot = accountSupplies[claimer];
+        uint256 claimableInterests = getClaimableInterests(claimer);
+        require(claimableInterests > 0, "no claimable interests");
+        require(
+            getUnderlyingBalance() >= claimableInterests,
+            "not insufficient balance for interests"
+        );
+
+        totalClaimed += claimableInterests;
+        supplySnapshot.claimed += claimableInterests;
+        _doTransferOutWithFee(
+            claimer,
+            claimableInterests,
+            feeRate.claimingFeeRate
+        );
+
+        emit InterestsClaimed(claimer, claimableInterests);
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -507,6 +551,7 @@ contract SFProtocolToken is
 
         _totalSupply -= redeemShareAmount;
         accountBalance[_redeemer] -= redeemShareAmount;
+        accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
 
         _doTransferOutWithFee(
             _redeemer,
@@ -527,7 +572,7 @@ contract SFProtocolToken is
             return initialExchangeRateMantissa;
         } else {
             // Otherwise: exchangeRate = (totalCash + totalBorrows - totalReserves) / totalSupply
-            uint256 totalCash = getUnderlyingBalance();
+            uint256 totalCash = getUnderlyingBalance() + totalClaimed;
 
             // totalBorrows and totalReserves are 18 decimals, convert cash decimal to 18.
             totalCash = convertUnderlyingToShare(totalCash);
@@ -649,7 +694,7 @@ contract SFProtocolToken is
             return (totalBorrows, totalReserves, borrowIndex);
         }
 
-        uint256 cashPrior = getUnderlyingBalance();
+        uint256 cashPrior = getUnderlyingBalance() + totalClaimed;
         uint256 borrowsPrior = totalBorrows;
         uint256 reservesPrior = totalReserves;
         uint256 borrowIndexPrior = borrowIndex;

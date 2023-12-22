@@ -32,6 +32,7 @@ describe("Sirio Finance Protocol test", function () {
         feeRate = {
             borrowingFeeRate: 100, // 1%
             redeemingFeeRate: 200, // 2%
+            claimingFeeRate: 150, // 1.5%
         };
 
         this.USDC = new ethers.Contract(
@@ -536,18 +537,29 @@ describe("Sirio Finance Protocol test", function () {
                 this.account_2.address
             );
 
+            let beforeClaimableInterests =
+                await this.sfUSDC.getClaimableInterests(this.account_1.address);
+
             await increaseBlock(28800);
             let [, afterBorrowedAmount] = await this.sfUSDC.getAccountSnapshot(
                 this.account_2.address
             );
+            let afterClaimableInterests =
+                await this.sfUSDC.getClaimableInterests(this.account_1.address);
 
-            console.log(
-                smallNum(afterBorrowedAmount, 6),
-                smallNum(beforeBorrowedAmount, 6)
-            );
             expect(smallNum(afterBorrowedAmount, 6)).to.be.greaterThan(
                 smallNum(beforeBorrowedAmount, 6)
             );
+
+            expect(smallNum(afterClaimableInterests, 6)).to.be.greaterThan(
+                smallNum(beforeClaimableInterests, 6)
+            );
+        });
+
+        it("reverts if not insufficient pool to provide interests", async function () {
+            await expect(
+                this.sfUSDC.connect(this.account_1).claimInterests()
+            ).to.be.revertedWith("not insufficient balance for interests");
         });
     });
 
@@ -654,6 +666,47 @@ describe("Sirio Finance Protocol test", function () {
                 expect(smallNum(beforeRepayAmount, 18)).to.be.closeTo(
                     smallNum(repaidAmount, 6),
                     0.0001
+                );
+            });
+        });
+
+        describe("claimInterests", function () {
+            it("claimInterests and check", async function () {
+                let claimableInterests =
+                    await this.sfUSDC.getClaimableInterests(
+                        this.account_1.address
+                    );
+                let beforeBal = await this.USDC.balanceOf(
+                    this.account_1.address
+                );
+                let beforeSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+                    this.account_1.address
+                );
+                let beforeOwnerBal = await this.USDC.balanceOf(
+                    this.deployer.address
+                );
+
+                await this.sfUSDC.connect(this.account_1).claimInterests();
+
+                let afterBal = await this.USDC.balanceOf(
+                    this.account_1.address
+                );
+                let afterSuppliedAmount = await this.sfUSDC.getSuppliedAmount(
+                    this.account_1.address
+                );
+                let afterOwnerBal = await this.USDC.balanceOf(
+                    this.deployer.address
+                );
+
+                let supplierAmount = BigInt(afterBal) - BigInt(beforeBal);
+                let ownerAmount =
+                    BigInt(afterOwnerBal) - BigInt(beforeOwnerBal);
+
+                expect(smallNum(claimableInterests, 6)).to.be.equal(
+                    smallNum(BigInt(supplierAmount) + BigInt(ownerAmount), 6)
+                );
+                expect(smallNum(beforeSuppliedAmount, 6)).to.be.equal(
+                    smallNum(afterSuppliedAmount, 6)
                 );
             });
         });
