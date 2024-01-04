@@ -5,6 +5,7 @@ interface ISFProtocolToken {
     struct FeeRate {
         uint16 borrowingFeeRate;
         uint16 redeemingFeeRate;
+        uint16 claimingFeeRate;
     }
 
     /// @notice Container for borrow balance information
@@ -13,6 +14,11 @@ interface ISFProtocolToken {
     struct BorrowSnapshot {
         uint principal;
         uint interestIndex;
+    }
+
+    struct SupplySnapshot {
+        uint256 principal;
+        uint256 claimed;
     }
 
     /// @notice The address of marketPositionManager.
@@ -54,6 +60,9 @@ interface ISFProtocolToken {
     /// @dev Reverts when contract is paused.
     /// @param _underlyingAmount The amount of underlying to borrow.
     function borrow(uint256 _underlyingAmount) external;
+
+    /// @notice Claim interests.
+    function claimInterests() external;
 
     /// @notice Repay borrowed underlying assets and get back SF token(shares).
     /// @param _repayAmount The amount of underlying assets to repay.
@@ -126,6 +135,8 @@ interface ISFProtocolToken {
     function unpause() external;
 
     event InterestAccrued();
+
+    event InterestsClaimed(address supplier, uint256 claimedAmount);
 
     event UnderlyingSupplied(
         address supplier,

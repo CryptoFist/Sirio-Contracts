@@ -18,6 +18,31 @@ interface IMarketPositionManager {
     /// @dev Only owner can call this function.
     function setMaxLiquidateRate(uint16 _newMaxLiquidateRate) external;
 
+    /// @notice Pause/Unpause borrowGuardian for tokens.
+    /// @dev Only owner can call this function.
+    function pauseBorrowGuardian(
+        address[] memory _tokens,
+        bool _pause
+    ) external;
+
+    /// @notice Pause/Unpause supplyGuardian for tokens.
+    /// @dev Only owner can call this function.
+    function pauseSupplyGuardian(
+        address[] memory _tokens,
+        bool _pause
+    ) external;
+
+    /// @notice Set borrow caps for tokens.
+    /// @dev Only owner can call this function.
+    function setBorrowCaps(
+        address[] memory _tokens,
+        uint256[] memory _borrowCaps
+    ) external;
+
+    /// @notice Set liquidateIncentiveMantissa.
+    /// @dev Only owner can call this function.
+    function setLiquidationIncentive(uint256 _liquidiateIncentive) external;
+
     /// @notice Add sfToken to markets.
     /// @dev Only owner can call this function.
     /// @param _token The address of sfToken to add to markets.

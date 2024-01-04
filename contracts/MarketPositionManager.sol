@@ -64,6 +64,52 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     }
 
     /// @inheritdoc IMarketPositionManager
+    function pauseBorrowGuardian(
+        address[] memory _tokens,
+        bool _pause
+    ) external override onlyOwner {
+        uint256 length = _tokens.length;
+        require(length > 0, "invalid array length");
+        for (uint256 i = 0; i < length; i++) {
+            borrowGuardianPaused[_tokens[i]] = _pause;
+        }
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function pauseSupplyGuardian(
+        address[] memory _tokens,
+        bool _pause
+    ) external override onlyOwner {
+        uint256 length = _tokens.length;
+        require(length > 0, "invalid arrray length");
+        for (uint256 i = 0; i < length; i++) {
+            supplyGuardianPaused[_tokens[i]] = _pause;
+        }
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function setBorrowCaps(
+        address[] memory _tokens,
+        uint256[] memory _borrowCaps
+    ) external override onlyOwner {
+        uint256 length = _tokens.length;
+        require(
+            length > 0 && length == _borrowCaps.length,
+            "invalid array length"
+        );
+        for (uint256 i = 0; i < length; i++) {
+            borrowCaps[_tokens[i]] = _borrowCaps[i];
+        }
+    }
+
+    /// @inheritdoc IMarketPositionManager
+    function setLiquidationIncentive(
+        uint256 _liquidiateIncentive
+    ) external override onlyOwner {
+        liquidationIncentiveMantissa = _liquidiateIncentive;
+    }
+
+    /// @inheritdoc IMarketPositionManager
     function checkMembership(
         address _account,
         address _token
