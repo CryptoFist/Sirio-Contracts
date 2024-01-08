@@ -19,6 +19,16 @@
       "address": "0x1632274C63D8383c4bAC636E3e39334bA481f16A",
       "txHash": "0x018f39acc9301e3334d8862b361c619ac7c6c159dfb31225e0ac6093449d54be",
       "kind": "transparent"
+    },
+    {
+      "address": "0xb60FdDaf4F7b5cbFaF6dC0EbB18B12303A4df63B",
+      "txHash": "0x24a2ada9ac5e89786419366fb6c8f28484387b5aa2d43e220ddf193ea4159ca4",
+      "kind": "transparent"
+    },
+    {
+      "address": "0xD3108423C38ed2C9D83716946a5f85c5De1b4A0d",
+      "txHash": "0xde8af8c83837097e066e3b4f4aade738f8b01ecd1940aace2c30b1d2951d5436",
+      "kind": "transparent"
     }
   ],
   "impls": {
@@ -1015,6 +1025,239 @@
               {
                 "label": "claimed",
                 "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {}
+      }
+    },
+    "60953d0f8b9d532e9ce98052cbcc62aa409f3a7e929e6f383a6b39db9c064d46": {
+      "address": "0xD017fC0fe7fba101B7c7156f947e0d0199De55c5",
+      "txHash": "0xf2b7242779fe63e010019e555b0577a12746dd5b321c098500f9213c27cffdfc",
+      "layout": {
+        "solcVersion": "0.8.17",
+        "storage": [
+          {
+            "label": "_initialized",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_uint8",
+            "contract": "Initializable",
+            "src": "@openzeppelin\\contracts-upgradeable\\proxy\\utils\\Initializable.sol:63",
+            "retypedFrom": "bool"
+          },
+          {
+            "label": "_initializing",
+            "offset": 1,
+            "slot": "0",
+            "type": "t_bool",
+            "contract": "Initializable",
+            "src": "@openzeppelin\\contracts-upgradeable\\proxy\\utils\\Initializable.sol:68"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "ContextUpgradeable",
+            "src": "@openzeppelin\\contracts-upgradeable\\utils\\ContextUpgradeable.sol:40"
+          },
+          {
+            "label": "_owner",
+            "offset": 0,
+            "slot": "51",
+            "type": "t_address",
+            "contract": "OwnableUpgradeable",
+            "src": "@openzeppelin\\contracts-upgradeable\\access\\OwnableUpgradeable.sol:22"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "52",
+            "type": "t_array(t_uint256)49_storage",
+            "contract": "OwnableUpgradeable",
+            "src": "@openzeppelin\\contracts-upgradeable\\access\\OwnableUpgradeable.sol:94"
+          },
+          {
+            "label": "borrowGuardianPaused",
+            "offset": 0,
+            "slot": "101",
+            "type": "t_mapping(t_address,t_bool)",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:15"
+          },
+          {
+            "label": "supplyGuardianPaused",
+            "offset": 0,
+            "slot": "102",
+            "type": "t_mapping(t_address,t_bool)",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:18"
+          },
+          {
+            "label": "markets",
+            "offset": 0,
+            "slot": "103",
+            "type": "t_mapping(t_address,t_struct(MarketInfo)7129_storage)",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:21"
+          },
+          {
+            "label": "borrowCaps",
+            "offset": 0,
+            "slot": "104",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:25"
+          },
+          {
+            "label": "accountAssets",
+            "offset": 0,
+            "slot": "105",
+            "type": "t_mapping(t_address,t_struct(AddressSet)3115_storage)",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:28"
+          },
+          {
+            "label": "liquidationIncentiveMantissa",
+            "offset": 0,
+            "slot": "106",
+            "type": "t_uint256",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:31"
+          },
+          {
+            "label": "maxLiquidateRate",
+            "offset": 0,
+            "slot": "107",
+            "type": "t_uint16",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:34"
+          },
+          {
+            "label": "priceOracle",
+            "offset": 2,
+            "slot": "107",
+            "type": "t_contract(IPriceOracle)7315",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:39"
+          },
+          {
+            "label": "seizeGuardianPaused",
+            "offset": 22,
+            "slot": "107",
+            "type": "t_bool",
+            "contract": "MarketPositionManager",
+            "src": "contracts\\MarketPositionManager.sol:154"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_array(t_bytes32)dyn_storage": {
+            "label": "bytes32[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)49_storage": {
+            "label": "uint256[49]",
+            "numberOfBytes": "1568"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_contract(IPriceOracle)7315": {
+            "label": "contract IPriceOracle",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(AddressSet)3115_storage)": {
+            "label": "mapping(address => struct EnumerableSet.AddressSet)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(MarketInfo)7129_storage)": {
+            "label": "mapping(address => struct IMarketPositionManager.MarketInfo)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_uint256)": {
+            "label": "mapping(bytes32 => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(AddressSet)3115_storage": {
+            "label": "struct EnumerableSet.AddressSet",
+            "members": [
+              {
+                "label": "_inner",
+                "type": "t_struct(Set)2800_storage",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(MarketInfo)7129_storage": {
+            "label": "struct IMarketPositionManager.MarketInfo",
+            "members": [
+              {
+                "label": "accountMembership",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "isListed",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_struct(Set)2800_storage": {
+            "label": "struct EnumerableSet.Set",
+            "members": [
+              {
+                "label": "_values",
+                "type": "t_array(t_bytes32)dyn_storage",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_indexes",
+                "type": "t_mapping(t_bytes32,t_uint256)",
                 "offset": 0,
                 "slot": "1"
               }
