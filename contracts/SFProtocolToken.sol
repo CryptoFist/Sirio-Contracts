@@ -202,7 +202,7 @@ contract SFProtocolToken is
     function supplyUnderlying(
         uint256 _underlyingAmount
     ) external override whenNotPaused {
-        require(_underlyingAmount > 0, "invalid supply amount");
+        require(_underlyingAmount > 0, "Invalid supply amount");
         IMarketPositionManager(marketPositionManager).validateSupply(
             msg.sender,
             address(this)
