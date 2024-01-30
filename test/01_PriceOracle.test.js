@@ -17,7 +17,7 @@ describe("PriceOracle test", function () {
         this.PriceOracle = await deploy(
             "PriceOracle",
             "PriceOracle",
-            params.USDCAddress,
+            params.HBAR,
             params.dexRouterV2Address
         );
 
@@ -33,35 +33,37 @@ describe("PriceOracle test", function () {
     });
 
     it("check price for WBTC, WETH", async function () {
-        let tokens = [params.WBTCAddress, params.WETHAddress];
-        let decimals = [8, 18];
+        let tokens = [params.WBTC, params.WETH];
+        let decimals = [6, 6];
 
         for (let i = 0; i < tokens.length; i++) {
             let amounts = await this.dexRouter.getAmountsOut(
                 bigNum(1, decimals[i]),
-                [tokens[i], params.USDCAddress]
+                [tokens[i], params.HBAR]
             );
 
             let price = await this.PriceOracle.getTokenPrice(tokens[i]);
 
-            expect(smallNum(amounts[1], 6)).to.be.closeTo(
+            expect(smallNum(amounts[1], 8)).to.be.closeTo(
                 smallNum(price, 18),
                 0.001
             );
         }
     });
 
-    it("updateBaseToken", async function () {
-        expect(await this.PriceOracle.baseToken()).to.be.equal(
-            params.USDCAddress
+    it("check price for HBAR", async function () {
+        let price = await this.PriceOracle.getTokenPrice(params.HBAR);
+        expect(smallNum(price, 18)).to.be.closeTo(
+            1,
+            0.001
         );
+    });
 
-        // reverts if caller is not the owner
-        await expect(
-            this.PriceOracle.connect(this.account_1).updateBaseToken(
-                params.WBTCAddress
-            )
-        ).to.be.revertedWith("Ownable: caller is not the owner");
+    it("updateBaseToken", async function () {
+        let tokenAddress = await this.PriceOracle.baseToken();
+        expect(tokenAddress).to.be.equal(
+            params.HBAR
+        );
 
         // reverts if base token address is invalid
         await expect(
@@ -69,9 +71,16 @@ describe("PriceOracle test", function () {
         ).to.be.revertedWith("invalid baseToken address");
 
         // update baseToken and check
-        await this.PriceOracle.updateBaseToken(params.WBTCAddress);
+        await this.PriceOracle.updateBaseToken(params.USDC);
         expect(await this.PriceOracle.baseToken()).to.be.equal(
-            params.WBTCAddress
+            params.USDC
         );
+
+        // reverts if caller is not the owner
+        await expect(
+            this.PriceOracle.connect(this.account_1).updateBaseToken(
+                params.USDC
+            )
+        ).to.be.reverted;
     });
 });

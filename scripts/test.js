@@ -41,6 +41,17 @@ async function main() {
     "MarketPositionManager",
     [priceOracle.address, param.maxLiquidateRate]
   )
+
+//   const deploy_token = await SFProtocolToken.deploy(
+//     feeRate,
+//     "0x00000000000000000000000000000000007502DB",
+//     "0x12c047Ff5A091dA9596E3dB69EBA18CADA9b2aAb",
+//     "0x45f816ef892a6523A8B611E3bBaBB799387F40b9",
+//     ethers.utils.parseUnits("0.02"),
+//     "eth",
+//     "ethl",
+//   );
+//     const contractAddress = (await deploy_token.deployTransaction.wait()).contractAddress;
     let USDClending = await deploy("SFProtocolToken", "SFProtocolToken",
         feeRate,
         param.USDC,
@@ -102,6 +113,8 @@ async function main() {
     await wbtclendingContract.tokenAssociate(param.WBTC);
     const wethlendingContract = await ethers.getContractAt("SFProtocolToken", WETHlending.address, deployer);
     await wethlendingContract.tokenAssociate(param.WETH);
+    // const lendingContract = await ethers.getContractAt("SFProtocolToken", WBTClending.address, deployer);
+    // await wbtclendingContract.tokenAssociate(param.WBTC);
     const hbarxlendingContract = await ethers.getContractAt("SFProtocolToken", HBARXlending.address, deployer);
     await hbarxlendingContract.tokenAssociate(param.HBARX);
     console.log("setting environment successfully!");

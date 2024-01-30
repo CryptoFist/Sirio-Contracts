@@ -38,7 +38,7 @@ contract InterestRateModel is Ownable2Step, IInterestRateModel {
         uint256 _kink,
         address owner_,
         string memory _name
-    ) {
+    ) Ownable(msg.sender) {
         blocksPerYear = _blocksPerYear;
         name = _name;
         _transferOwnership(owner_);
@@ -113,11 +113,11 @@ contract InterestRateModel is Ownable2Step, IInterestRateModel {
         uint256 _reserves,
         uint256 _reserveFactorMantissa
     ) public view override returns (uint256) {
-        uint256 oneMinusReserveFactor = uint256(1e18) - _reserveFactorMantissa;
-        uint256 borrowRate = getBorrowRate(_cash, _borrows, _reserves);
-        uint256 rateToPool = (borrowRate * oneMinusReserveFactor) / 1e18;
+        // uint256 oneMinusReserveFactor = uint256(1e18) - _reserveFactorMantissa;
+        // uint256 borrowRate = getBorrowRate(_cash, _borrows, _reserves);
+        // uint256 rateToPool = (borrowRate * oneMinusReserveFactor) / 1e18;
         return
-            (utilizationRate(_cash, _borrows, _reserves) * rateToPool) / 1e18;
+            (utilizationRate(_cash, _borrows, _reserves) * multiplierPerBlock) / 1e18;
     }
 
     /// @notice Internal function to update the parameters of the interest rate model

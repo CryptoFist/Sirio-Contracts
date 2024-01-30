@@ -21,7 +21,7 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
 
     bool public constant isPriceOracle = true;
 
-    constructor(address _baseToken, address _swapRouter) {
+    constructor(address _baseToken, address _swapRouter) Ownable(msg.sender) {
         baseToken = _baseToken;
         swapRouter = _swapRouter;
         factory = IUniswapV2Router02(swapRouter).factory();
@@ -47,7 +47,9 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
     function _getTokenPrice(address _token) internal view returns (uint256) {
         uint8 baseDecimal = IToken(baseToken).decimals();
         uint8 tokenDecimal = IToken(_token).decimals();
-
+        if(_token == baseToken){
+            return(10**18);
+        }
         address[] memory path = new address[](2);
         path[0] = _token;
         path[1] = baseToken;

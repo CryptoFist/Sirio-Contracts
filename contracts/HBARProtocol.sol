@@ -53,7 +53,7 @@ interface ISFProtocolToken {
     /// @notice Supply underlying assets to lending pool.
     /// @dev Reverts when contract is paused.
     /// @param _underlyingAmount The amount of underlying asset.
-    function supplyUnderlying(uint256 _underlyingAmount) external;
+    function supplyUnderlying(uint256 _underlyingAmount) external payable;
 
     /// @notice Redeem underlying asset by burning SF token(shares).
     /// @dev Reverts when contract is paused.
@@ -75,7 +75,7 @@ interface ISFProtocolToken {
 
     /// @notice Repay borrowed underlying assets and get back SF token(shares).
     /// @param _repayAmount The amount of underlying assets to repay.
-    function repayBorrow(uint256 _repayAmount) external;
+    function repayBorrow(uint256 _repayAmount) payable external;
 
     /// @notice Sender repays a borrow belonging to borrower
     /// @param _borrower the account with the debt being payed off
@@ -83,7 +83,7 @@ interface ISFProtocolToken {
     function repayBorrowBehalf(
         address _borrower,
         uint256 _repayAmount
-    ) external;
+    ) payable external;
 
     /// @notice Liquidate borrowed underlying assets instead of borrower.
     /// @param _borrower The address of borrower.
@@ -93,7 +93,7 @@ interface ISFProtocolToken {
         address _borrower,
         address _collateralToken,
         uint256 _repayAmount
-    ) external;
+    ) payable external;
 
     /// @notice Transfers collateral tokens (this market) to the liquidator.
     /// @dev Will fail unless called by another cToken during the process of liquidation.
@@ -384,33 +384,7 @@ interface IMarketPositionManager {
     event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
 }
 
-
-library TransferHelper {
-    function safeApprove(address token, address to, uint value) internal {
-        // bytes4(keccak256(bytes('approve(address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x095ea7b3, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: APPROVE_FAILED');
-    }
-
-    function safeTransfer(address token, address to, uint value) internal {
-        // bytes4(keccak256(bytes('transfer(address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FAILED');
-    }
-
-    function safeTransferFrom(address token, address from, address to, uint value) internal {
-        // bytes4(keccak256(bytes('transferFrom(address,address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FROM_FAILED');
-    }
-
-    function safeTransferETH(address to, uint value) internal {
-        (bool success,) = to.call{value:value}(new bytes(0));
-        require(success, 'TransferHelper: ETH_TRANSFER_FAILED');
-    }
-}
-
-contract SFProtocolToken is
+contract HBARProtocol is
     ERC20,
     Ownable2Step,
     Pausable,
@@ -500,16 +474,18 @@ contract SFProtocolToken is
         // set basic args
         borrowRateMaxMantissa = 0.00004e16;
         protocolSeizeShareMantissa = 2.8e16; //2.8%
-        FEERATE_FIXED_POINT = 10000;
+        FEERATE_FIXED_POINT = 10_000;
 
         feeRate = _feeRate;
         underlyingToken = _underlyingToken;
         interestRateModel = _interestRateModel;
         initialExchangeRateMantissa = _initialExchangeRateMantissa;
         accrualBlockNumber = block.number;
-        underlyingDecimals = IERC20Metadata(underlyingToken).decimals();
+        underlyingDecimals = 8;
         marketPositionManager = _marketPositionManager;
         borrowIndex = 1e18;
+        // __ERC20_init(_name, _symbol);
+        // __Ownable2Step_init();
     }
 
     /// @notice ERC20 standard function
@@ -567,6 +543,7 @@ contract SFProtocolToken is
 
         uint256 exchangeRate = getExchangeRateStored();
         uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
+        // suppliedAmount -= accountSupplies[_account].claimed;
         return convertToUnderlying(suppliedAmount);
     }
 
@@ -599,33 +576,30 @@ contract SFProtocolToken is
 
     /// @inheritdoc ISFProtocolToken
     function getUnderlyingBalance() public view override returns (uint256) {
-        return IERC20(underlyingToken).balanceOf(address(this));
+        return address(this).balance;
     }
 
     /// @inheritdoc ISFProtocolToken
     function supplyUnderlying(
         uint256 _underlyingAmount
-    ) external override whenNotPaused {
-        require(_underlyingAmount > 0, "invalid supply amount");
+    ) payable public override whenNotPaused {
+        require(_underlyingAmount <= msg.value && _underlyingAmount > 0, "invalid supply amount");
         IMarketPositionManager(marketPositionManager).validateSupply(
             msg.sender,
             address(this)
         );
 
         _accrueInterest();
-
-        uint256 exchangeRate = _exchangeRateStoredInternal(
-            totalBorrows,
-            totalReserves
-        );
-        uint256 actualSuppliedAmount = _doTransferIn(
-            msg.sender,
-            _underlyingAmount
-        );
+        uint256 actualSuppliedAmount = _underlyingAmount;
 
         accountSupplies[msg.sender].principal += actualSuppliedAmount;
 
         actualSuppliedAmount = convertUnderlyingToShare(actualSuppliedAmount);
+
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            actualSuppliedAmount
+        );
         uint256 shareAmount = (actualSuppliedAmount * 1e18) / exchangeRate;
         require(shareAmount > 0, "too small for supplying");
 
@@ -637,19 +611,19 @@ contract SFProtocolToken is
 
     /// @inheritdoc ISFProtocolToken
     function redeem(uint256 _shareAmount) external override whenNotPaused {
-        _redeem(msg.sender, _shareAmount, 0);
+        _redeem(payable(msg.sender), _shareAmount, 0);
     }
 
     /// @inheritdoc ISFProtocolToken
     function redeemExactUnderlying(
         uint256 _underlyingAmount
     ) external override whenNotPaused {
-        _redeem(msg.sender, 0, _underlyingAmount);
+        _redeem(payable(msg.sender), 0, _underlyingAmount);
     }
 
     /// @inheritdoc ISFProtocolToken
     function borrow(uint256 _underlyingAmount) external override whenNotPaused {
-        address borrower = msg.sender;
+        address payable borrower = payable(msg.sender);
         IMarketPositionManager(marketPositionManager).validateBorrow(
             address(this),
             borrower,
@@ -704,10 +678,10 @@ contract SFProtocolToken is
 
     /// @inheritdoc ISFProtocolToken
     function claimInterests(uint256 amount) external override {
-        address claimer = msg.sender;
+        address payable claimer = payable(msg.sender);
         SupplySnapshot storage supplySnapshot = accountSupplies[claimer];
         uint256 claimableInterests = getClaimableInterests(claimer);
-        require(claimableInterests >= amount, "not enough claimable interests");
+        require(claimableInterests > amount, "not enough claimable interests");
         require(
             getUnderlyingBalance() >= amount,
             "not insufficient balance for interests"
@@ -730,7 +704,6 @@ contract SFProtocolToken is
         supplySnapshot.claimed += amount;
         _totalSupply -= claimShareAmount;
         accountBalance[claimer] -= claimShareAmount;
-
         _doTransferOutWithFee(
             claimer,
             amount,
@@ -741,15 +714,18 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
-    function repayBorrow(uint256 _repayAmount) external override {
+    function repayBorrow(uint256 _repayAmount) payable external override {
+        require(msg.value >= _repayAmount && _repayAmount > 0, "Invalid Amount");
         _repayBorrowInternal(msg.sender, msg.sender, _repayAmount);
+
     }
 
     /// @inheritdoc ISFProtocolToken
     function repayBorrowBehalf(
         address _borrower,
         uint256 _repayAmount
-    ) external override {
+    ) payable external override {
+        require(msg.value >= _repayAmount && _repayAmount > 0, "Invalid Amount");
         _repayBorrowInternal(msg.sender, _borrower, _repayAmount);
     }
 
@@ -767,7 +743,8 @@ contract SFProtocolToken is
         address _borrower,
         address _collateralToken,
         uint256 _repayAmount
-    ) external override {
+    ) payable external override {
+        require(msg.value >= _repayAmount && _repayAmount > 0, "Invalid Amount");
         address liquidator = msg.sender;
         require(_borrower != liquidator, "can not liquidate own borrows");
         require(_repayAmount > 0, "invalid liquidate amount");
@@ -853,7 +830,13 @@ contract SFProtocolToken is
     function sweepToken(address _token) external override onlyOwner {
         require(_token != underlyingToken, "can not sweep underlying token");
         uint256 balance = IERC20(_token).balanceOf(address(this));
-        TransferHelper.safeTransfer(_token, owner(), balance);
+        IERC20(_token).safeTransfer(owner(), balance);
+    }
+
+    function withdrawFund() external onlyOwner{
+        uint256 balance = address(this).balance;
+        (bool sent, ) = owner().call{value:balance}("");
+        require(sent, "Failed to send Hbar");
     }
 
     /// @notice Applies accrued interest to total borrows and reserves
@@ -902,7 +885,7 @@ contract SFProtocolToken is
 
         require(repayAmountFinal > 0, "no borrows to repay");
 
-        uint256 actualRepayAmount = _doTransferIn(_payer, repayAmountFinal);
+        uint256 actualRepayAmount = repayAmountFinal;//have to revise
         actualRepayAmount = convertUnderlyingToShare(actualRepayAmount);
         uint256 accountBorrowsNew = accountBorrowsPrior - actualRepayAmount;
         uint256 totalBorrowsNew = totalBorrows - actualRepayAmount;
@@ -924,7 +907,7 @@ contract SFProtocolToken is
 
     /// @notice Redeem undnerlying token as exact underlying or with shares.
     function _redeem(
-        address _redeemer,
+        address payable _redeemer,
         uint256 _shareAmount,
         uint256 _underlyingAmount
     ) internal {
@@ -1005,22 +988,10 @@ contract SFProtocolToken is
         }
     }
 
-    /// @notice Calculate actual transferred token amount.
-    function _doTransferIn(
-        address _from,
-        uint256 _amount
-    ) internal returns (uint256) {
-        IERC20 token = IERC20(underlyingToken);
-        uint balanceBefore = token.balanceOf(address(this));
-        TransferHelper.safeTransferFrom(underlyingToken, _from, address(this), _amount);
-        uint balanceAfter = token.balanceOf(address(this));
-        return balanceAfter - balanceBefore;
-    }
-
     /// @notice Transfer underlyingToken to a user excluding fee.
     /// @dev Fee sends to owner.
     function _doTransferOutWithFee(
-        address _to,
+        address payable _to,
         uint256 _amount,
         uint16 _feeRate
     ) internal {
@@ -1028,10 +999,12 @@ contract SFProtocolToken is
         uint256 transferAmount = _amount - feeAmount;
 
         if (feeAmount > 0) {
-            TransferHelper.safeTransfer(underlyingToken, owner(), feeAmount);
+            (bool feesent, ) = owner().call{value: feeAmount}("");
+            require(feesent, "Failed to send Hbar");
         }
 
-        TransferHelper.safeTransfer(underlyingToken, _to, transferAmount);
+        (bool sent, ) = _to.call{value: transferAmount}("");
+        require(sent, "Failed to send Hbar");
     }
 
     /// @notice Return the borrow balance of account based on stored data.

@@ -21,15 +21,16 @@ const DEPLOYMENT_PARAM = {
     },
     hedera_testnet: {
         dexRouterV2Address: "0x000000000000000000000000000000000000e8df", // SaucerSwap
-        WBTCAddress: "0x000000000000000000000000000000000068017d",
-        WETHAddress: "0x00000000000000000000000000000000006801b3",
-        WHBARAddress: "0x000000000000000000000000000000000000e6a2",
-        USDCAddress: "0x00000000000000000000000000000000006801ba",
+        USDC:"0x0000000000000000000000000000000000003316",
+        WBTC : "0x00000000000000000000000000000000007502d3",
+        WETH : "0x00000000000000000000000000000000007502DB",
+        HBAR : "0x000000000000000000000000000000000000e6a2",
+        HBARX : "0x00000000000000000000000000000000007502dd",
         maxLiquidateRate: 10000, // 100%
         initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
         interestRate: {
             blocksPerYear: 365 * 24 * 60 * 60,
-            baseRatePerYear: ethers.utils.parseEther("0.02"),
+            baseRatePerYear: ethers.utils.parseEther("0.8"),
             multiplerPerYear: ethers.utils.parseEther("0.225"),
             jumpMultiplierPerYear: ethers.utils.parseEther("1.25"),
             kink: ethers.utils.parseEther("0.8"),
@@ -59,7 +60,7 @@ const getDeploymentParam = () => {
         return DEPLOYMENT_PARAM.hedera_mainnet;
     } else if (network.name == "hardhat") {
         return DEPLOYMENT_PARAM.hardhat;
-    } else if (network.name == "hedera_testnet") {
+    } else if (network.name == "testnet") {
         return DEPLOYMENT_PARAM.hedera_testnet;
     } else {
         return {};
