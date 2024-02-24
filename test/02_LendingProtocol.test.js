@@ -223,17 +223,17 @@ describe("Sirio Finance Protocol test", function () {
 
         it("supply again and check", async function () {
             let originShare = await this.sfWBTC.balanceOf(
-                this.deployer.address
+                this.tester.address
             );
-            await this.WBTC.connect(this.deployer).approve(
+            await this.WBTC.connect(this.tester).approve(
                 this.sfWBTC.address,
                 BigInt(supplyAmount)
             );
-            let beforeBal = await this.sfWBTC.balanceOf(this.deployer.address);
+            let beforeBal = await this.sfWBTC.balanceOf(this.tester.address);
             await this.sfWBTC
-                .connect(this.deployer)
+                .connect(this.tester)
                 .supplyUnderlying(BigInt(supplyAmount));
-            let afterBal = await this.sfWBTC.balanceOf(this.deployer.address);
+            let afterBal = await this.sfWBTC.balanceOf(this.tester.address);
             let receivedShareAmounts = BigInt(afterBal) - BigInt(beforeBal);
             expect(smallNum(originShare, 18)).to.be.equal(
                 smallNum(receivedShareAmounts, 18)
@@ -251,10 +251,10 @@ describe("Sirio Finance Protocol test", function () {
 
             it("redeem and check", async function () {
                 let suppliedAmount = await this.sfWBTC.getSuppliedAmount(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let ownedShareAmount = await this.sfWBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
 
                 let redeemShare = BigInt(ownedShareAmount) / BigInt(2);
@@ -267,19 +267,19 @@ describe("Sirio Finance Protocol test", function () {
                     BigInt(expectUnderlyingAmount) - BigInt(feeAmount);
 
                 let beforeOwnerBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let beforeRecvBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 await this.sfWBTC
-                    .connect(this.deployer)
+                    .connect(this.tester)
                     .redeem(BigInt(redeemShare));
                 let afterOwnerBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let afterRecvBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
 
                 let ownerReceivedAmount =
@@ -301,17 +301,17 @@ describe("Sirio Finance Protocol test", function () {
         describe("redeemExactUnderlying", function () {
             it("reverts if amount is invalid", async function () {
                 await expect(
-                    this.sfWBTC.connect(this.deployer).redeemExactUnderlying(0)
+                    this.sfWBTC.connect(this.tester).redeemExactUnderlying(0)
                 ).to.be.reverted;
             });
 
             it("redeem and check", async function () {
                 let suppliedAmount = await this.sfWBTC.getSuppliedAmount(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let redeemAmount = BigInt(suppliedAmount) / BigInt(2);
                 let ownedShareAmount = await this.sfWBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let feeAmount =
                     (BigInt(redeemAmount) * BigInt(feeRate.redeemingFeeRate)) /
@@ -320,19 +320,19 @@ describe("Sirio Finance Protocol test", function () {
                     BigInt(redeemAmount) - BigInt(feeAmount);
 
                 let beforeUnderlyingBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let beforeShareBal = await this.sfWBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 await this.sfWBTC
-                    .connect(this.deployer)
+                    .connect(this.tester)
                     .redeemExactUnderlying(BigInt(redeemAmount));
                 let afterUnderlyingBal = await this.WBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
                 let afterShareBal = await this.sfWBTC.balanceOf(
-                    this.deployer.address
+                    this.tester.address
                 );
 
                 expect(
@@ -411,7 +411,7 @@ describe("Sirio Finance Protocol test", function () {
             
             await this.sfHBAR
                 .connect(this.tester)
-                .supplyUnderlying(BigInt(supplyAmount),{
+                .supplyUnderlying(BigInt(supplyAmount/10**10),{
                     value: BigInt(supplyAmount),
                 });
         });

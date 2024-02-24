@@ -91,9 +91,18 @@ interface ISFProtocolToken {
     /// @param _collateralToken The address of token to seize.
     /// @param _repayAmount The amount of underlying assert to liquidate.
     function liquidateBorrow(
+        address liquidator,
         address _borrower,
         address _collateralToken,
         uint256 _repayAmount
+    ) external;
+
+    /// @notice removeBorrow remove borrow instead of borrower.
+    /// @param _borrower The address of borrower.
+    /// @param _amount The amount of asset to remove borrow.
+    function removeBorrow(
+        address _borrower, 
+        uint256 _amount
     ) external;
 
     /// @notice Transfers collateral tokens (this market) to the liquidator.
@@ -106,6 +115,14 @@ interface ISFProtocolToken {
         address _liquidator,
         address _borrower,
         uint256 _seizeTokens
+    ) external;
+
+    /// @notice seizeToprotocol seize asset to protocol.
+    /// @param _borrower The address of borrower.
+    /// @param _amount The amount of asset to seize.
+    function seizeToprotocol(
+        address _borrower,
+        uint256 _amount
     ) external;
 
     /// @notice Sweep tokens.
@@ -243,6 +260,14 @@ interface IMarketPositionManager {
     /// @notice Check if token is listed to market or not.
     function checkListedToken(address _token) external view returns (bool);
 
+    /// @notice Get redeemable underlying token amount by a user.
+    /// @param _account The address of supplier.
+    /// @param _token The address of sfToken.
+    function getRedeemableAmount(
+        address _account,
+        address _token
+    ) external view returns (uint256);
+
     /// @notice Get borrowable underlying token amount by a user.
     /// @param _account The address of borrower.
     /// @param _token The address of sfToken.
@@ -250,32 +275,6 @@ interface IMarketPositionManager {
         address _account,
         address _token
     ) external view returns (uint256);
-
-    /// @notice Get liquidable amount with seize token.
-    /// @param _borrowToken The address of borrowed sfToken.
-    /// @param _seizeToken The address of sfToken to seize.
-    /// @param _borrower The address of borrower.
-    function getLiquidableAmountWithSeizeToken(
-        address _borrowToken,
-        address _seizeToken,
-        address _borrower
-    ) external view returns (uint256);
-
-    /// @notice Get liquidable amount.
-    /// @param _borrowToken The address of borrowed sfToken.
-    /// @param _borrower The address of borrower.
-    function getLiquidableAmount(
-        address _borrowToken,
-        address _borrower
-    ) external view returns (uint256);
-
-    /// @notice Check if seize is allowed.
-    /// @param _collateralToken The address of token to be uses as collateral.
-    /// @param _borrowToken The address of borrowed token.
-    function validateSeize(
-        address _collateralToken,
-        address _borrowToken
-    ) external view;
 
     /// @notice Check if available to borrow exact amount of underlying token.
     /// @param _token The address of SFProtocolToken.
@@ -298,26 +297,13 @@ interface IMarketPositionManager {
     ) external view returns (bool);
 
     /// @notice Check if available to liquidate.
-    /// @param _tokenBorrowed The address of borrowed token.
-    /// @param _tokenSeize The address of token to be used as collateral.
     /// @param _borrower The address of the borrower.
     /// @param _liquidateAmount The amount of _tokenCollateral to liquidate.
     function validateLiquidate(
-        address _tokenBorrowed,
-        address _tokenSeize,
+        address _liquidator,
         address _borrower,
         uint256 _liquidateAmount
-    ) external view;
-
-    /// @notice Calculate number of tokens of collateral asset to seize given an underlying amount
-    /// @param _borrowToken The address of the borrowed token
-    /// @param _seizeToken The address of the collateral token
-    /// @param _repayAmount The amount of sfTokenBorrowed underlying to convert into sfTokenCollateral tokens
-    function liquidateCalculateSeizeTokens(
-        address _borrowToken,
-        address _seizeToken,
-        uint256 _repayAmount
-    ) external view returns (uint256);
+    ) external view returns(bool);
 
     /// @notice Check if supplying is allowed and token is listed to market.
     function validateSupply(address _supplier, address _token) external;
@@ -344,6 +330,9 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     /// @notice Assets array that a user borrowed.
     mapping(address => EnumerableSet.AddressSet) private accountAssets;
 
+    /// @notice Borrowers addresses
+    address[] public borrowerList;
+
     /// @notice Multiplier representing the discount on collateral that a liquidator receives
     uint256 public liquidationIncentiveMantissa;
 
@@ -353,7 +342,10 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
     /// @notice 10,000 = 100%
     uint16 public constant FIXED_RATE = 10_000;
 
+    /// @notice HBAR price on the market
     uint256 public HBARprice;
+
+    uint256 public HealthcareThreshold;
 
     IPriceOracle public priceOracle;
 
@@ -365,13 +357,15 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
 
     function initialize(
         address _priceOracle,
-        uint16 _maxLiquidateRate
+        uint16 _maxLiquidateRate,
+        uint256 _healthcareThreshold
     ) public initializer {
         __Ownable_init();
         setPriceOracle(_priceOracle);
         setMaxLiquidateRate(_maxLiquidateRate);
-        liquidationIncentiveMantissa = 1e18;
-        HBARprice = 7000000;
+        liquidationIncentiveMantissa = 1e17;
+        HBARprice = 8*10**16;
+        HealthcareThreshold = _healthcareThreshold;
     }
 
     /// @inheritdoc IMarketPositionManager
@@ -475,150 +469,163 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
         return markets[_token].isListed;
     }
 
-    bool public seizeGuardianPaused;
-
-    /// @inheritdoc IMarketPositionManager
-    function validateSeize(
-        address _seizeToken,
-        address _borrowToken
-    ) external view override {
-        require(!seizeGuardianPaused, "seize is paused");
-        require(
-            markets[_seizeToken].isListed && markets[_borrowToken].isListed,
-            "not listed token"
-        );
-        require(
-            ISFProtocolToken(_seizeToken).marketPositionManager() ==
-                ISFProtocolToken(_borrowToken).marketPositionManager(),
-            "mismatched markeManagerPosition"
-        );
-    }
-
-    /// @inheritdoc IMarketPositionManager
-    function liquidateCalculateSeizeTokens(
-        address _borrowToken,
-        address _seizeToken,
-        uint256 _repayAmount
-    ) public view override returns (uint256) {
-        uint256 borrowTokenPrice = priceOracle.getUnderlyingPrice(_borrowToken);
-        uint256 seizeTokenPrice = priceOracle.getUnderlyingPrice(_seizeToken);
-
-        require(borrowTokenPrice > 0 && seizeTokenPrice > 0, "price error");
-
-        uint256 exchangeRate = ISFProtocolToken(_seizeToken)
-            .getExchangeRateStored();
-
-        uint256 borrowIncentive = liquidationIncentiveMantissa *
-            borrowTokenPrice;
-        uint256 collateralIncentive = seizeTokenPrice * exchangeRate;
-
-        uint256 ratio = (borrowIncentive * 1e18) / collateralIncentive;
-        uint256 seizeTokens = (ratio * _repayAmount) / 1e18;
-
-        return seizeTokens;
-    }
-
-    /// @inheritdoc IMarketPositionManager
-    function getLiquidableAmountWithSeizeToken(
-        address _borrowToken,
-        address _seizeToken,
+    function checkHealthcare(
         address _borrower
-    ) external view override returns (uint256) {
-        (, uint256 borrowAmount, ) = ISFProtocolToken(_borrowToken)
-            .getAccountSnapshot(_borrower);
-        if (!markets[_borrowToken].isListed || !markets[_seizeToken].isListed) {
-            return 0;
+    ) public view returns(uint256, uint256, uint256){
+        address[] memory assets = accountAssets[_borrower].values();
+        uint256 length = assets.length;
+
+        uint256 totalCollateral = 0;
+        uint256 totalDebt = 0;
+        uint256 totalSupplied = 0;
+        address account = _borrower;
+        for (uint256 i = 0; i < length; i++) {
+            (
+                uint256 accountCollateral,
+                uint256 accountDebt,
+            ) = _calCollateralAndDebt(
+                    account,
+                    assets[i],
+                    0,
+                    0
+                );
+
+            totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+            totalSupplied += accountCollateral* 10**2 / borrowCaps[assets[i]];
         }
-
-        uint256 liquidableAmount;
-        if (borrowGuardianPaused[_borrowToken]) {
-            liquidableAmount = borrowAmount;
-        } else {
-            bool validation = _checkValidation(_borrower, _borrowToken, 0, 0);
-            liquidableAmount = validation
-                ? 0
-                : ((borrowAmount * maxLiquidateRate) / FIXED_RATE);
-        }
-
-        uint256 borrowTokenPrice = priceOracle.getUnderlyingPrice(_borrowToken);
-        uint256 seizeTokenPrice = priceOracle.getUnderlyingPrice(_seizeToken);
-
-        require(borrowTokenPrice > 0 && seizeTokenPrice > 0, "price error");
-
-        uint256 exchangeRate = ISFProtocolToken(_seizeToken)
-            .getExchangeRateStored();
-        uint256 borrowIncentive = liquidationIncentiveMantissa *
-            borrowTokenPrice;
-        uint256 collateralIncentive = seizeTokenPrice * exchangeRate;
-        uint256 ratio = (borrowIncentive * 1e18) / collateralIncentive;
-
-        uint256 seizeTokenAmount = IERC20(_seizeToken).balanceOf(_borrower);
-        liquidableAmount = (seizeTokenAmount * 1e18) / ratio;
-        liquidableAmount = ISFProtocolToken(_borrowToken).convertToUnderlying(
-            liquidableAmount
-        );
-
-        return liquidableAmount;
+        uint256 healthcare = totalDebt * 1e18 / totalCollateral;
+        return (
+            healthcare, 
+            totalDebt,
+            totalSupplied
+        );                           
     }
 
-    /// @inheritdoc IMarketPositionManager
-    function getLiquidableAmount(
-        address _borrowToken,
-        address _borrower
-    ) external view override returns (uint256) {
-        (, uint256 borrowAmount, ) = ISFProtocolToken(_borrowToken)
-            .getAccountSnapshot(_borrower);
-        if (!markets[_borrowToken].isListed) {
-            return 0;
+    function checkLiquidation() public view returns(
+        address[] memory borrowers, 
+        uint256[] memory debts, 
+        uint256[] memory reward)
+    {
+        borrowers = new address[](borrowerList.length);
+        debts = new uint256[](borrowerList.length);
+        reward = new uint256[](borrowerList.length);
+        uint j = 0;
+        for (uint256 i = 0; i < borrowerList.length; i++) {
+            ( uint256 healthcare, uint256 debt, uint256 supplied) = checkHealthcare(borrowerList[i]);
+            if (healthcare >= HealthcareThreshold){
+                borrowers[j] = borrowerList[i];
+                debts[j] = debt;
+                uint256 amount = supplied * liquidationIncentiveMantissa / 1e18;
+                reward[j] = supplied >= (debt + amount) ? (debt + amount/2) : (debt + (supplied - debt)/2);
+                j++;
+            }
         }
+    }
 
-        uint256 liquidableAmount;
-        if (borrowGuardianPaused[_borrowToken]) {
-            liquidableAmount = borrowAmount;
-        } else {
-            bool validation = _checkValidation(_borrower, _borrowToken, 0, 0);
-            liquidableAmount = validation
-                ? 0
-                : ((borrowAmount * maxLiquidateRate) / FIXED_RATE);
+    function calcLiquidationDetail(
+        address borrower, 
+        uint256 liquidateAmount
+        ) public view returns(
+            address[] memory suppliedAssets, 
+            uint256[] memory liquidateAmounts,
+            address[] memory borrowedAssets,
+            uint256[] memory borrowedAmounts)
+    {
+        address[] memory assets = accountAssets[borrower].values();
+        suppliedAssets = new address[](assets.length);
+        borrowedAssets = new address[](assets.length);
+        liquidateAmounts = new uint256[](assets.length);
+        borrowedAmounts = new uint256[](assets.length);
+        uint supplyCount = 0; 
+        uint borrowCount = 0;
+        for (uint256 i = 0; i < assets.length; i++) {
+            ISFProtocolToken asset = ISFProtocolToken(assets[i]);
+            (
+                uint256 shareBalance,
+                uint256 borrowedAmount,
+                uint256 exchangeRate
+            ) = asset.getAccountSnapshot(borrower);
+            if(shareBalance > 0 && liquidateAmount > 0){
+                suppliedAssets[supplyCount] = assets[i];
+                uint256 suppliedAmount = (exchangeRate * shareBalance) / 1e18;
+                uint256 tokenPrice = priceOracle.getUnderlyingPrice(assets[i]) * HBARprice / 1e18;
+                if(liquidateAmount >= (suppliedAmount * tokenPrice / 1e18)){
+                    liquidateAmounts[supplyCount] = suppliedAmount;
+                    liquidateAmount -= suppliedAmount * tokenPrice / 1e18;
+                }
+                else{
+                    liquidateAmounts[supplyCount] = liquidateAmount * 1e18 /tokenPrice;
+                    liquidateAmount = 0;
+                }
+
+                supplyCount++;
+            }
+            if(borrowedAmount > 0){
+                borrowedAssets[borrowCount] = assets[i];
+                borrowedAmounts[borrowCount] = borrowedAmount;
+                borrowCount++;
+            }
         }
+    }
 
-        return liquidableAmount;
+    function liquidateBorrow(address _borrower, address _token, uint256 _amount) external {
+        require(_amount > 0, "invalid liquidation amount");
+        address _liquidator = msg.sender;
+        require(validateLiquidate(_liquidator, _borrower, _amount), "invalid liquidation");
+        require(_liquidator != _borrower, "invalid liquidator");
+        (
+            address[] memory suppliedAssets, 
+            uint256[] memory liquidateAmounts,
+            address[] memory borrowedAssets,
+            uint256[] memory borrowedAmounts
+        ) = calcLiquidationDetail(_borrower, _amount);
+        ISFProtocolToken asset = ISFProtocolToken(_token);
+        ( , uint256 debt ,) = checkHealthcare(_borrower);
+        uint256 liquidateProtocolFee = _amount - debt;
+        for (uint256 i = 0; i < borrowedAssets.length; i++){
+            if(borrowedAmounts[i] > 0 && borrowedAssets[i] != address(0)){
+                asset.liquidateBorrow(_liquidator, _borrower, borrowedAssets[i], borrowedAmounts[i]);
+                if(borrowedAssets[i] != _token){
+                    ISFProtocolToken(borrowedAssets[i]).removeBorrow(_borrower, borrowedAmounts[i]);
+                }
+            }
+        }
+        for (uint j = 0; j < suppliedAssets.length; j++){
+            if(liquidateAmounts[j] > 0 && suppliedAssets[j] != address(0)){
+                ISFProtocolToken(suppliedAssets[j]).seize(_liquidator, _borrower, liquidateAmounts[j]);
+            }
+        }
+        (
+            address[] memory Assets, 
+            uint256[] memory Amounts, ,
+        ) = calcLiquidationDetail(_borrower, liquidateProtocolFee);
+        for(uint k = 0; k < Assets.length; k++){
+            if(Amounts[k] > 0){
+                ISFProtocolToken(suppliedAssets[k]).seizeToprotocol(_borrower, Amounts[k]);
+            }
+        }
     }
 
     /// @inheritdoc IMarketPositionManager
     function validateLiquidate(
-        address _tokenBorrowed,
-        address _tokenSeize,
+        address _liquidator,
         address _borrower,
         uint256 _liquidateAmount
-    ) external view {
+    ) public view returns(bool) {
         require(
-            markets[_tokenBorrowed].isListed && markets[_tokenSeize].isListed,
-            "not listed token"
+            validateBorrower(_borrower),
+            "not listed borrower"
         );
 
-        (, uint256 borrowAmount, ) = ISFProtocolToken(_tokenBorrowed)
-            .getAccountSnapshot(_borrower);
+        ( uint256 healthcare, uint256 debt, ) = checkHealthcare(_borrower);
+        (uint256 liquidatorHealthcare, uint256 liquidatordebt, uint256 supplied) = checkHealthcare(_liquidator);
 
-        if (borrowGuardianPaused[_tokenBorrowed]) {
-            require(
-                borrowAmount >= _liquidateAmount,
-                "can not liquidate more than borrowed"
-            );
-        } else {
-            // To liquidate, borrower should be under collateralized.
-            require(
-                !_checkValidation(_borrower, _tokenBorrowed, 0, 0),
-                "unable to liquidate"
-            );
+        require( healthcare >= HealthcareThreshold, "not subject of liquidation");
+        require( liquidatorHealthcare < HealthcareThreshold, "can't liquidate");
+        require((supplied - liquidatordebt) > debt, "liquidator doesn't have enough assets");
 
-            uint256 maxLiquidateAmount = (borrowAmount * maxLiquidateRate) /
-                FIXED_RATE;
-            require(
-                maxLiquidateAmount > _liquidateAmount,
-                "too much to liquidate"
-            );
-        }
+        return _liquidateAmount > debt;
     }
 
     /// @inheritdoc IMarketPositionManager
@@ -636,6 +643,10 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             if (!accountAssets[_borrower].contains(_token)) {
                 accountAssets[_borrower].add(_token);
             }
+        }
+
+        if (!validateBorrower(_borrower)) {
+            borrowerList.push(_borrower);
         }
 
         require(
@@ -719,9 +730,9 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             totalDebt += accountDebt;
         }
 
-        availableCollateral = totalDebt >= totalCollateral
+        availableCollateral = totalDebt >= ( totalCollateral * 95 / 100)
             ? 0
-            : totalCollateral - totalDebt;
+            : ( totalCollateral * 95 / 100)  - totalDebt;
 
         uint256 borrowableAmount = (availableCollateral * 1e18) /
             borrowTokenPrice;
@@ -734,6 +745,87 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             : borrowableAmount;
 
         return ISFProtocolToken(_token).convertToUnderlying(borrowableAmount);
+    }
+
+    /// @notice Get redeemable underlying token amount by a user.
+    /// @param _account The address of supplier.
+    /// @param _token The address of sfToken.
+    function getRedeemableAmount(
+        address _account,
+        address _token
+    ) external view override returns (uint256) {
+        address[] memory assets = accountAssets[_account].values();
+        uint256 length = assets.length;
+        uint256 totalCollateral = 0;
+        uint256 totalDebt = 0;
+        uint256 totalSupplied = 0;
+        address account = _account;
+        address token = _token;
+        uint256 borrowTokenPrice;
+        uint256 availableCollateral;
+
+        uint256 accountCollateral;
+        uint256 accountDebt;
+        for (uint256 i = 0; i < length; i++) {
+            uint256 price;
+            address asset = assets[i];
+            (accountCollateral, accountDebt, price) = _calCollateralAndDebt(
+                account,
+                asset,
+                0,
+                0
+            );
+
+            if (asset == token) {
+                borrowTokenPrice = price;
+            }
+
+            totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+            totalSupplied += accountCollateral* 10**2 / borrowCaps[asset];
+        }
+
+        if (!accountAssets[account].contains(token)) {
+            (
+                accountCollateral,
+                accountDebt,
+                borrowTokenPrice
+            ) = _calCollateralAndDebt(account, token, 0, 0);
+
+            totalCollateral += accountCollateral;
+            totalDebt += accountDebt;
+            totalSupplied += accountCollateral* 10**2 / borrowCaps[token];
+        }
+
+        availableCollateral = totalDebt >= ( totalCollateral * 95 / 100)
+            ? 0
+            : ( totalCollateral * 95 / 100) - totalDebt;
+        if(totalDebt == 0) {
+            availableCollateral = totalSupplied;
+        }
+
+        uint256 redeemableAmount = (availableCollateral * 1e18) /
+            borrowTokenPrice;
+        redeemableAmount = ISFProtocolToken(_token).convertToUnderlying(redeemableAmount);
+        uint256 poolAmount = ISFProtocolToken(token).getUnderlyingBalance();
+        uint256 supplied = ISFProtocolToken(_token).getSuppliedAmount(account);
+        redeemableAmount = redeemableAmount > supplied
+            ? supplied
+            : redeemableAmount;
+        redeemableAmount = redeemableAmount > poolAmount
+            ? poolAmount
+            : redeemableAmount;
+
+        return redeemableAmount;
+    }
+
+    function validateBorrower(address _borrower) internal view returns (bool) {
+        for (uint256 i = 0; i < borrowerList.length; i++) {
+            if (borrowerList[i] == _borrower) {
+                return true; // _borrower is in the borrowerList
+            }
+        }
+        return false; // _borrower is not in the borrowerList
     }
 
     function _checkValidation(
@@ -784,7 +876,7 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             totalDebt += accountDebt;
         }
 
-        return totalCollateral > totalDebt;
+        return (totalCollateral * 95 /100) >= totalDebt;
     }
 
     function _calCollateralAndDebt(
@@ -808,7 +900,7 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
             uint256 exchangeRate
         ) = asset.getAccountSnapshot(_account);
 
-        tokenPrice = priceOracle.getUnderlyingPrice(address(asset)) * HBARprice / 1e8;
+        tokenPrice = priceOracle.getUnderlyingPrice(address(asset)) * HBARprice / 1e18;
         require(tokenPrice > 0, "price error");
 
         // accountCollateral is USD amount of user supplied
@@ -823,5 +915,9 @@ contract MarketPositionManager is OwnableUpgradeable, IMarketPositionManager {
 
     function updatePrice(uint price)external onlyOwner{
         HBARprice = price;
+    }
+
+    function updateHealthcareT(uint thresold) external onlyOwner{
+        HealthcareThreshold = thresold;
     }
 }

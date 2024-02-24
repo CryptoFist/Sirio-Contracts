@@ -58,7 +58,7 @@ contract PriceOracle is Ownable2Step, IPriceOracle {
             path
         );
 
-        uint256 price = amounts[amounts.length - 1];
+        uint256 price = amounts[1];
         return _scaleTo(price, baseDecimal, 18);
     }
 

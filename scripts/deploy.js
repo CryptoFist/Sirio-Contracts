@@ -39,7 +39,7 @@ async function main() {
   let marketPositionManager = await deployProxy(
     "MarketPositionManager",
     "MarketPositionManager",
-    [priceOracle.address, param.maxLiquidateRate]
+    [priceOracle.address, param.maxLiquidateRate, param.healthcareThresold]
   )
     let USDClending = await deploy("SFProtocolToken", "SFProtocolToken",
         feeRate,
@@ -47,6 +47,8 @@ async function main() {
         interestRateModel.address,
         marketPositionManager.address,
         param.initialExchangeRateMantissa,
+        param.dexRouterV2Address,
+        param.HBAR,
         "usdc",
         "usdcl",
     );
@@ -56,6 +58,8 @@ async function main() {
         interestRateModel.address,
         marketPositionManager.address,
         param.initialExchangeRateMantissa,
+        param.dexRouterV2Address,
+        param.HBAR,
         "wbtc",
         "wbtcl",
     );
@@ -65,6 +69,8 @@ async function main() {
         interestRateModel.address,
         marketPositionManager.address,
         param.initialExchangeRateMantissa,
+        param.dexRouterV2Address,
+        param.HBAR,
         "weth",
         "wethl",
     );
@@ -74,6 +80,7 @@ async function main() {
         interestRateModel.address,
         marketPositionManager.address,
         param.initialExchangeRateMantissa,
+        param.dexRouterV2Address,
         "hbar",
         "hbarl",
     );
@@ -83,6 +90,8 @@ async function main() {
         interestRateModel.address,
         marketPositionManager.address,
         param.initialExchangeRateMantissa,
+        param.dexRouterV2Address,
+        param.HBAR,
         "hbarx",
         "hbarxl",
     );

@@ -87,11 +87,12 @@ interface ISFProtocolToken {
 
     /// @notice Liquidate borrowed underlying assets instead of borrower.
     /// @param _borrower The address of borrower.
-    /// @param _collateralToken The address of token to seize.
+    /// @param _borrowedToken The address of borrowed.
     /// @param _repayAmount The amount of underlying assert to liquidate.
     function liquidateBorrow(
+        address _liquidator,
         address _borrower,
-        address _collateralToken,
+        address _borrowedToken,
         uint256 _repayAmount
     ) external;
 
@@ -105,6 +106,14 @@ interface ISFProtocolToken {
         address _liquidator,
         address _borrower,
         uint256 _seizeTokens
+    ) external;
+
+    /// @notice seizeToprotocol seize asset to protocol.
+    /// @param _borrower The address of borrower.
+    /// @param _amount The amount of asset to seize.
+    function seizeToprotocol(
+        address _borrower,
+        uint256 _amount
     ) external;
 
     /// @notice Sweep tokens.
@@ -179,7 +188,7 @@ interface ISFProtocolToken {
         address borrower,
         uint repayAmount,
         address cTokenCollateral,
-        uint seizeTokens
+        address borrowedToken
     );
 }
 
@@ -384,30 +393,102 @@ interface IMarketPositionManager {
     event NewMaxLiquidateRateSet(uint16 maxLiquidateRate);
 }
 
+interface IUniswapV2Router01 {
+    function factory() external pure returns (address);
+    function WHBAR() external pure returns (address);
+    function whbar() external pure returns (address);
 
-library TransferHelper {
-    function safeApprove(address token, address to, uint value) internal {
-        // bytes4(keccak256(bytes('approve(address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x095ea7b3, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: APPROVE_FAILED');
-    }
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB, uint liquidity);
+    function addLiquidityETH(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
 
-    function safeTransfer(address token, address to, uint value) internal {
-        // bytes4(keccak256(bytes('transfer(address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0xa9059cbb, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FAILED');
-    }
+    function addLiquidityNewPool(
+        address tokenA,
+        address tokenB,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountA, uint amountB, uint liquidity);
+    
+    function addLiquidityETHNewPool(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
 
-    function safeTransferFrom(address token, address from, address to, uint value) internal {
-        // bytes4(keccak256(bytes('transferFrom(address,address,uint256)')));
-        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, from, to, value));
-        require(success && (data.length == 0 || abi.decode(data, (bool))), 'TransferHelper: TRANSFER_FROM_FAILED');
-    }
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB);
+    function removeLiquidityETH(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountToken, uint amountETH);
 
-    function safeTransferETH(address to, uint value) internal {
-        (bool success,) = to.call{value:value}(new bytes(0));
-        require(success, 'TransferHelper: ETH_TRANSFER_FAILED');
-    }
+    function swapExactTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+    function swapTokensForExactTokens(
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+    function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
+        external
+        payable
+        returns (uint[] memory amounts);
+    function swapTokensForExactETH(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+        external
+        returns (uint[] memory amounts);
+    function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+        external
+        returns (uint[] memory amounts);
+    function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)
+        external
+        payable
+        returns (uint[] memory amounts);
+
+    function quote(uint amountA, uint reserveA, uint reserveB) external pure returns (uint amountB);
+    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) external pure returns (uint amountOut);
+    function getAmountIn(uint amountOut, uint reserveIn, uint reserveOut) external pure returns (uint amountIn);
+    function getAmountsOut(uint amountIn, address[] calldata path) external view returns (uint[] memory amounts);
+    function getAmountsIn(uint amountOut, address[] calldata path) external view returns (uint[] memory amounts);
 }
 
 contract SFProtocolToken is
@@ -424,16 +505,19 @@ contract SFProtocolToken is
     mapping(address => uint256) private accountBalance;
 
     /// @notice Borrowed underlying token amount per user.
-    mapping(address => BorrowSnapshot) private accountBorrows;
+    mapping(address => BorrowSnapshot) public accountBorrows;
 
     /// @notice Supplied underlying token amount per user.
-    mapping(address => SupplySnapshot) private accountSupplies;
+    mapping(address => SupplySnapshot) public accountSupplies;
 
     /// @notice Information for feeRate.
     FeeRate public feeRate;
 
     /// @inheritdoc ISFProtocolToken
     address public override underlyingToken;
+
+    ///@notice saucerswap router address
+    address public swapRouter;
 
     /// @notice The address of interestRateModel contract.
     address public interestRateModel;
@@ -476,6 +560,9 @@ contract SFProtocolToken is
 
     /// @notice Underlying Token Decimals
     uint8 private underlyingDecimals;
+
+    /// @notice wrapped HBAR token address
+    address public HBARaddress;
     
 
     constructor(
@@ -484,6 +571,8 @@ contract SFProtocolToken is
         address _interestRateModel,
         address _marketPositionManager,
         uint256 _initialExchangeRateMantissa,
+        address _router,
+        address _basetoken,
         string memory _name,
         string memory _symbol
     )  ERC20(_name, _symbol) Ownable(msg.sender) {
@@ -503,6 +592,8 @@ contract SFProtocolToken is
         FEERATE_FIXED_POINT = 10000;
 
         feeRate = _feeRate;
+        swapRouter = _router;
+        HBARaddress = _basetoken;
         underlyingToken = _underlyingToken;
         interestRateModel = _interestRateModel;
         initialExchangeRateMantissa = _initialExchangeRateMantissa;
@@ -510,6 +601,11 @@ contract SFProtocolToken is
         underlyingDecimals = IERC20Metadata(underlyingToken).decimals();
         marketPositionManager = _marketPositionManager;
         borrowIndex = 1e18;
+    }
+
+    modifier onlyManager{
+        require(msg.sender == marketPositionManager, "caller is not manager");
+        _;
     }
 
     /// @notice ERC20 standard function
@@ -583,7 +679,7 @@ contract SFProtocolToken is
     /// @inheritdoc ISFProtocolToken
     function getAccountSnapshot(
         address _account
-    ) external view override returns (uint256, uint256, uint256) {
+    ) public view override returns (uint256, uint256, uint256) {
         (
             uint256 totalBorrowsNew,
             uint256 totalReservesNew,
@@ -757,64 +853,127 @@ contract SFProtocolToken is
     function seize(
         address _liquidator,
         address _borrower,
-        uint256 _seizeTokens
-    ) external override nonReentrant {
-        _seizeInternal(msg.sender, _liquidator, _borrower, _seizeTokens);
+        uint256 _seizeAmount
+    ) external override nonReentrant onlyManager {
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
+        );
+        uint256 shareAmount = ( _seizeAmount * 1e18 )/ exchangeRate;
+        uint256 underlyingAmount = convertToUnderlying(_seizeAmount);
+        require(accountBalance[_borrower] >= shareAmount, "invalid balance");
+        accountBalance[_borrower] -= shareAmount;
+        accountBalance[_liquidator] += shareAmount;
+        require(accountSupplies[_borrower].principal >= underlyingAmount, "invalid seize principal amount");
+        accountSupplies[_borrower].principal -= underlyingAmount;
+        accountSupplies[_liquidator].principal += underlyingAmount;
+        emit Transfer(_borrower, _liquidator, shareAmount);
+    }
+
+    /// @inheritdoc ISFProtocolToken
+    function seizeToprotocol(
+        address _borrower,
+        uint256 _seizeAmount
+    ) external override nonReentrant onlyManager {
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
+        );
+        uint256 shareAmount = ( _seizeAmount * 1e18 )/ exchangeRate;
+        uint256 underlyingAmount = convertToUnderlying(_seizeAmount);
+        totalReserves += _seizeAmount;
+        require(_totalSupply >= shareAmount, "invalid seize amount");
+        _totalSupply = _totalSupply - shareAmount;
+        accountBalance[_borrower] -= shareAmount;
+        require(accountSupplies[_borrower].principal >= underlyingAmount, "invalid protocol seize amount");
+        accountSupplies[_borrower].principal -= underlyingAmount;
+        emit Transfer(_borrower, address(this), shareAmount);
+        emit ReservesAdded(
+            address(this),
+            _seizeAmount,
+            totalReserves
+        );
     }
 
     /// @inheritdoc ISFProtocolToken
     function liquidateBorrow(
+        address _liquidator,
         address _borrower,
-        address _collateralToken,
+        address _borrowedToken,
         uint256 _repayAmount
-    ) external override {
-        address liquidator = msg.sender;
-        require(_borrower != liquidator, "can not liquidate own borrows");
+    ) external override onlyManager {
         require(_repayAmount > 0, "invalid liquidate amount");
-
-        _accrueInterest();
-        IMarketPositionManager(marketPositionManager).validateLiquidate(
-            address(this),
-            _collateralToken,
-            _borrower,
-            _repayAmount
-        );
-
-        uint256 actualLiquidateAmount = _repayBorrowInternal(
-            liquidator,
-            _borrower,
-            _repayAmount
-        );
-
-        uint256 seizeTokens = IMarketPositionManager(marketPositionManager)
-            .liquidateCalculateSeizeTokens(
-                address(this),
-                _collateralToken,
-                actualLiquidateAmount
+        uint256 liquidatorBalance = getSuppliedAmount(_liquidator);
+        if(_borrowedToken == address(this)){
+            _accrueInterest();
+            ( , uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
+            // uint256 accountBorrowsPrior = _borrowBalanceStoredInternal(
+            //     _borrower,
+            //     borrowIndex
+            // );
+            require(accountBorrowsPrior >= _repayAmount, "liquidate amount can't be bigger than borrow amount");
+            uint256 accountBorrowsNew = accountBorrowsPrior - _repayAmount;
+            require(totalBorrows >= _repayAmount, "can't be bigger than total borrow");
+            uint256 totalBorrowsNew = totalBorrows - _repayAmount;
+            accountBorrows[_borrower].principal = accountBorrowsNew;
+            accountBorrows[_borrower].interestIndex = borrowIndex;
+            totalBorrows = totalBorrowsNew;
+        }
+        else{
+            address token1 = underlyingToken;
+            address token2 = ISFProtocolToken(_borrowedToken).underlyingToken();
+            uint256 outputAmount = ISFProtocolToken(_borrowedToken).convertToUnderlying(_repayAmount);
+            address[] memory path = new address[](2);
+            path[0] = token1;
+            path[1] = token2;
+            uint256[] memory amounts = IUniswapV2Router01(swapRouter).getAmountsIn(
+                outputAmount,
+                path
             );
-
-        require(
-            IERC20(_collateralToken).balanceOf(_borrower) >= seizeTokens,
-            "insufficient borrower balance for liquidate"
-        );
-
-        if (_collateralToken == address(this)) {
-            _seizeInternal(address(this), liquidator, _borrower, seizeTokens);
-        } else {
-            ISFProtocolToken(_collateralToken).seize(
-                liquidator,
-                _borrower,
-                seizeTokens
-            );
+            require(amounts[1] == outputAmount, "invalid swap amount");
+            IERC20(token1).approve(swapRouter, amounts[0]);
+            require(amounts[0] <= liquidatorBalance, "liquidator don't have enough assets");
+            uint256 beforeBalance = getUnderlyingBalance();
+            uint256 deadline = block.timestamp + 1000;
+            if(token2 == HBARaddress){
+                IUniswapV2Router01(swapRouter).swapTokensForExactETH(outputAmount, (amounts[0]), path, _borrowedToken, deadline);
+            }
+            else{
+                IUniswapV2Router01(swapRouter).swapTokensForExactTokens(outputAmount, (amounts[0]), path, _borrowedToken, deadline);
+            }
+            uint256 afterBalance = getUnderlyingBalance();
+            _repayAmount = convertUnderlyingToShare(beforeBalance - afterBalance);
         }
 
-        emit LiquidateBorrow(
-            liquidator,
-            _borrower,
-            actualLiquidateAmount,
-            _collateralToken,
-            seizeTokens
+        uint256 exchangeRate = _exchangeRateStoredInternal(
+            totalBorrows,
+            totalReserves
         );
+        uint256 liquidateShareAmount = (_repayAmount * 1e18) / exchangeRate;
+        uint256 liquidateUnderlyingAmount = convertToUnderlying(_repayAmount);
+        require(liquidatorBalance >= liquidateUnderlyingAmount, "liquidator don't have enough assets");
+        _totalSupply -= liquidateShareAmount;
+        accountBalance[_liquidator] -= liquidateShareAmount;
+        accountSupplies[_liquidator].principal -= liquidateUnderlyingAmount;
+
+        emit LiquidateBorrow(
+            _liquidator,
+            _borrower,
+            liquidateUnderlyingAmount,
+            address(this),
+            _borrowedToken
+        );
+    }
+
+    function removeBorrow(address _borrower, uint256 _amount) external onlyManager{
+         _accrueInterest();
+        ( , uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
+        uint256 accountBorrowsNew = accountBorrowsPrior < _amount ? 0 : accountBorrowsPrior - _amount;
+        uint256 totalBorrowsNew = totalBorrows >= _amount ? (totalBorrows - _amount) : 0;
+        totalReserves += accountBorrowsPrior >= _amount ? 0 : (_amount - accountBorrowsPrior);
+        accountBorrows[_borrower].principal = accountBorrowsNew;
+        accountBorrows[_borrower].interestIndex = borrowIndex;
+        totalBorrows = totalBorrowsNew;
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -853,7 +1012,7 @@ contract SFProtocolToken is
     function sweepToken(address _token) external override onlyOwner {
         require(_token != underlyingToken, "can not sweep underlying token");
         uint256 balance = IERC20(_token).balanceOf(address(this));
-        TransferHelper.safeTransfer(_token, owner(), balance);
+        IERC20(_token).safeTransfer(owner(), balance);
     }
 
     /// @notice Applies accrued interest to total borrows and reserves
@@ -1012,7 +1171,7 @@ contract SFProtocolToken is
     ) internal returns (uint256) {
         IERC20 token = IERC20(underlyingToken);
         uint balanceBefore = token.balanceOf(address(this));
-        TransferHelper.safeTransferFrom(underlyingToken, _from, address(this), _amount);
+        token.safeTransferFrom(_from, address(this), _amount);
         uint balanceAfter = token.balanceOf(address(this));
         return balanceAfter - balanceBefore;
     }
@@ -1028,10 +1187,10 @@ contract SFProtocolToken is
         uint256 transferAmount = _amount - feeAmount;
 
         if (feeAmount > 0) {
-            TransferHelper.safeTransfer(underlyingToken, owner(), feeAmount);
+            IERC20(underlyingToken).safeTransfer(owner(), feeAmount);
         }
 
-        TransferHelper.safeTransfer(underlyingToken, _to, transferAmount);
+         IERC20(underlyingToken).safeTransfer(_to, transferAmount);
     }
 
     /// @notice Return the borrow balance of account based on stored data.
@@ -1051,51 +1210,6 @@ contract SFProtocolToken is
         // recentBorrowBalance = borrower.borrowBalance * market.borrowIndex / borrower.borrowIndex
         uint256 principalTimesIndex = borrowSnapshot.principal * _borrowIndex;
         return principalTimesIndex / borrowSnapshot.interestIndex;
-    }
-
-    /// @notice Transfers collateral tokens (this market) to the liquidator.
-    /// @dev Called only during an in-kind liquidation, or by liquidateBorrow during the liquidation of another CToken.
-    ///  Its absolutely critical to use msg.sender as the seizer cToken and not a parameter.
-    /// @param _seizeToken The contract seizing the collateral (i.e. borrowed cToken)
-    /// @param _liquidator The account receiving seized collateral
-    /// @param _borrower The account having collateral seized
-    /// @param _seizeAmount The number of cTokens to seize
-    function _seizeInternal(
-        address _seizeToken,
-        address _liquidator,
-        address _borrower,
-        uint256 _seizeAmount
-    ) internal {
-        IMarketPositionManager(marketPositionManager).validateSeize(
-            _seizeToken,
-            address(this)
-        );
-
-        require(_borrower != _liquidator, "can not liquidate own borrows");
-
-        uint256 seizeAmountForProtocol = (_seizeAmount *
-            protocolSeizeShareMantissa) / 1e18;
-        uint256 seizeAmountForLiquidator = _seizeAmount -
-            seizeAmountForProtocol;
-        uint256 exchangeRate = _exchangeRateStoredInternal(
-            totalBorrows,
-            totalReserves
-        );
-        uint256 addReserveAmount = (exchangeRate * seizeAmountForProtocol) /
-            1e18;
-
-        totalReserves = totalReserves + addReserveAmount;
-        _totalSupply = _totalSupply - seizeAmountForProtocol;
-        accountBalance[_borrower] -= _seizeAmount;
-        accountBalance[_liquidator] += seizeAmountForLiquidator;
-
-        emit Transfer(_borrower, _liquidator, seizeAmountForLiquidator);
-        emit Transfer(_borrower, address(this), seizeAmountForProtocol);
-        emit ReservesAdded(
-            address(this),
-            seizeAmountForProtocol,
-            totalReserves
-        );
     }
 
     function getUpdatedRates()
