@@ -864,8 +864,7 @@ contract SFProtocolToken is
         require(accountBalance[_borrower] >= shareAmount, "invalid balance");
         accountBalance[_borrower] -= shareAmount;
         accountBalance[_liquidator] += shareAmount;
-        require(accountSupplies[_borrower].principal >= underlyingAmount, "invalid seize principal amount");
-        accountSupplies[_borrower].principal -= underlyingAmount;
+        accountSupplies[_borrower].principal = accountSupplies[_borrower].principal >= underlyingAmount ? accountSupplies[_borrower].principal - underlyingAmount : 0;
         accountSupplies[_liquidator].principal += underlyingAmount;
         emit Transfer(_borrower, _liquidator, shareAmount);
     }
@@ -885,8 +884,7 @@ contract SFProtocolToken is
         require(_totalSupply >= shareAmount, "invalid seize amount");
         _totalSupply = _totalSupply - shareAmount;
         accountBalance[_borrower] -= shareAmount;
-        require(accountSupplies[_borrower].principal >= underlyingAmount, "invalid protocol seize amount");
-        accountSupplies[_borrower].principal -= underlyingAmount;
+        accountSupplies[_borrower].principal = accountSupplies[_borrower].principal >= underlyingAmount ? accountSupplies[_borrower].principal - underlyingAmount : 0;
         emit Transfer(_borrower, address(this), shareAmount);
         emit ReservesAdded(
             address(this),
