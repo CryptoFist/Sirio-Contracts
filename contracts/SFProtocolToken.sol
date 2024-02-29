@@ -1127,7 +1127,13 @@ contract SFProtocolToken is
 
         _totalSupply -= redeemShareAmount;
         accountBalance[_redeemer] -= redeemShareAmount;
-        accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
+        if(redeemUnderlyingAmount > accountSupplies[_redeemer].principal){
+            uint256 interest = getClaimableInterests(_redeemer);
+            accountSupplies[_redeemer].principal -= redeemUnderlyingAmount - interest;
+        }
+        else{
+            accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
+        }
 
         _doTransferOutWithFee(
             _redeemer,

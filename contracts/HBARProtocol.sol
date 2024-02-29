@@ -658,7 +658,6 @@ contract HBARProtocol is
 
         uint256 exchangeRate = getExchangeRateStored();
         uint256 suppliedAmount = (balance * exchangeRate) / 1e18;
-        // suppliedAmount -= accountSupplies[_account].claimed;
         return convertToUnderlying(suppliedAmount);
     }
 
@@ -792,7 +791,7 @@ contract HBARProtocol is
     }
 
     /// @inheritdoc ISFProtocolToken
-    function claimInterests(uint256 amount) external override {
+    function claimInterests(uint256 amount) public override {
         address payable claimer = payable(msg.sender);
         SupplySnapshot storage supplySnapshot = accountSupplies[claimer];
         uint256 claimableInterests = getClaimableInterests(claimer);
@@ -1100,7 +1099,6 @@ contract HBARProtocol is
         }
 
         redeemUnderlyingAmount = convertToUnderlying(redeemUnderlyingAmount);
-
         require(
             getUnderlyingBalance() >= redeemUnderlyingAmount,
             "insufficient pool"
@@ -1118,7 +1116,13 @@ contract HBARProtocol is
 
         _totalSupply -= redeemShareAmount;
         accountBalance[_redeemer] -= redeemShareAmount;
-        accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
+        if(redeemUnderlyingAmount > accountSupplies[_redeemer].principal){
+            uint256 interest = getClaimableInterests(_redeemer);
+            accountSupplies[_redeemer].principal -= redeemUnderlyingAmount - interest;
+        }
+        else{
+            accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
+        }
 
         _doTransferOutWithFee(
             _redeemer,
