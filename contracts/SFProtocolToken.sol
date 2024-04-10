@@ -615,6 +615,12 @@ contract SFProtocolToken is
         return accountBalance[_account];
     }
 
+    function setFeeRate(
+        FeeRate memory _feeRate
+    ) external onlyOwner{
+        feeRate = _feeRate;
+    }
+
     function tokenAssociate(address tokenId) external {
        int response = HederaTokenService.associateToken(address(this), tokenId);
  

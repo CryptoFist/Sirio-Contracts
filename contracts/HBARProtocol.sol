@@ -603,6 +603,12 @@ contract HBARProtocol is
         _;
     }
 
+    function setFeeRate(
+        FeeRate memory _feeRate
+    ) external onlyOwner{
+        feeRate = _feeRate;
+    }
+
     /// @notice ERC20 standard function
     function balanceOf(
         address _account
