@@ -12,8 +12,8 @@ interface ISFProtocolToken {
     /// @member principal Total balance (with accrued interest), after applying the most recent balance-changing action
     /// @member interestIndex Global borrowIndex as of the most recent balance-changing action
     struct BorrowSnapshot {
-        uint principal;
-        uint interestIndex;
+        uint256 principal;
+        uint256 interestIndex;
     }
 
     struct SupplySnapshot {
@@ -21,14 +21,14 @@ interface ISFProtocolToken {
         uint256 claimed;
     }
 
-    /// @notice The address of marketPositionManager.
-    function marketPositionManager() external view returns (address);
+    // /// @notice The address of marketPositionManager.
+    // function marketPositionManager() external view returns (address);
 
     /// @notice Get the address of underlying.
     function underlyingToken() external view returns (address);
 
-    /// @notice Total amount of outstanding borrows of the underlying in this market
-    function totalBorrows() external view returns (uint256);
+    // /// @notice Total amount of outstanding borrows of the underlying in this market
+    // function totalBorrows() external view returns (uint256);
 
     /// @notice Get underlying balance of SFProtocol token.
     function getUnderlyingBalance() external view returns (uint256);
@@ -62,7 +62,10 @@ interface ISFProtocolToken {
     function borrow(uint256 _underlyingAmount) external;
 
     /// @notice Claim interests.
-    function claimInterests() external;
+    // function claimInterests() external; old one
+
+    function claimInterests(uint256 amount) external;
+
 
     /// @notice Repay borrowed underlying assets and get back SF token(shares).
     /// @param _repayAmount The amount of underlying assets to repay.
@@ -78,11 +81,12 @@ interface ISFProtocolToken {
 
     /// @notice Liquidate borrowed underlying assets instead of borrower.
     /// @param _borrower The address of borrower.
-    /// @param _collateralToken The address of token to seize.
+    /// @param _borrowedToken The address of borrowed.
     /// @param _repayAmount The amount of underlying assert to liquidate.
     function liquidateBorrow(
+        address _liquidator,
         address _borrower,
-        address _collateralToken,
+        address _borrowedToken,
         uint256 _repayAmount
     ) external;
 
@@ -97,6 +101,15 @@ interface ISFProtocolToken {
         address _borrower,
         uint256 _seizeTokens
     ) external;
+
+    /// @notice seizeToprotocol seize asset to protocol.
+    /// @param _borrower The address of borrower.
+    /// @param _amount The amount of asset to seize.
+    function seizeToprotocol(
+        address _borrower,
+        uint256 _amount
+    ) external;
+
 
     /// @notice Sweep tokens.
     /// @dev Only owner can call this function and tokes will send to owner.
@@ -146,30 +159,41 @@ interface ISFProtocolToken {
 
     event Borrow(
         address borrower,
-        uint borrowAmount,
-        uint accountBorrows,
-        uint totalBorrows
+        uint256 borrowAmount,
+        uint256 accountBorrows,
+        uint256 totalBorrows
     );
 
     event RepayBorrow(
         address payer,
         address borrower,
-        uint repayAmount,
-        uint accountBorrows,
-        uint totalBorrows
+        uint256 repayAmount,
+        uint256 accountBorrows,
+        uint256 totalBorrows
     );
 
     event ReservesAdded(
         address benefactor,
-        uint addAmount,
-        uint newTotalReserves
+        uint256 addAmount,
+        uint256 newTotalReserves
     );
+
+
+    // old implementation
+    // event LiquidateBorrow(
+    //     address liquidator,
+    //     address borrower,
+    //     uint repayAmount,
+    //     address cTokenCollateral,
+    //     uint seizeTokens
+    // );
+
 
     event LiquidateBorrow(
         address liquidator,
         address borrower,
         uint repayAmount,
         address cTokenCollateral,
-        uint seizeTokens
+        address borrowedToken
     );
 }

@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "./HederaTokenService.sol";
 
 interface ISFProtocolToken {
@@ -501,6 +502,9 @@ contract HBARProtocol is
 {
     using SafeERC20 for IERC20;
 
+    /// @notice interface for nft collection
+    IERC721 public nftCollection;
+
     /// @notice Share amount per user.
     mapping(address => uint256) private accountBalance;
 
@@ -567,6 +571,7 @@ contract HBARProtocol is
         address _underlyingToken,
         address _interestRateModel,
         address _marketPositionManager,
+        address _nftCollection,
         uint256 _initialExchangeRateMantissa,
         address _router,
         string memory _name,
@@ -581,6 +586,8 @@ contract HBARProtocol is
             _marketPositionManager != address(0),
             "invalid marketPositionManager address"
         );
+        
+        nftCollection = IERC721(_nftCollection);
 
         // set basic args
         borrowRateMaxMantissa = 0.00004e16;
@@ -623,6 +630,41 @@ contract HBARProtocol is
            revert ("Associate Failed");
        }
    }
+
+    /// @notice This function provides a view to get all balance related information for a user
+    /// @dev Returns the current account balance, borrow balance, and supplies for the user
+    /// @param _user The address of the user whose balance information is being queried
+    /// @return _accountBalance The current account balance of the user
+    /// @return _accountBorrow The current borrow balance of the user
+    /// @return _accountSupplies The current supply balance of the user
+    function getAllBalance(address _user) external view returns(uint256 _accountBalance, uint256 _accountBorrow, uint256 _accountSupplies) {
+        return (
+            accountBalance[_user],
+            accountBorrows[_user].principal,
+            accountSupplies[_user].principal
+
+        );
+    }
+
+    /// @notice Calculates the fee discount based on the number of NFTs a user holds
+    /// @dev Returns a reduced fee based on the number of NFTs the user holds
+    /// @param _user The address of the user whose discount is to be calculated
+    /// @param _baseFee The original fee rate, before any discounts are applied
+    /// @return The adjusted fee after applying the discount for NFT ownership
+    function checkNftDiscount(address _user, uint16 _baseFee) public view returns (uint16) {
+        uint256 count = nftCollection.balanceOf(_user);
+        
+        if (count >= 4) {
+            return 0; // 100% discount for 4 or more NFTs
+        } else if (count == 3) {
+            return _baseFee * 25 / 100; // 75% discount for 3 NFTs
+        } else if (count == 2) {
+            return _baseFee * 50 / 100; // 50% discount for 2 NFTs
+        } else if (count == 1) {
+            return _baseFee * 75 / 100; // 25% discount for 1 NFT
+        }
+        return _baseFee; // No discount if no NFTs are held
+    }
 
     /// @inheritdoc ISFProtocolToken
     function supplyRatePerBlock() external view override returns (uint256) {
@@ -770,10 +812,12 @@ contract HBARProtocol is
         accountBorrows[borrower].interestIndex = borrowIndex;
         totalBorrows = totalBorrowsNew;
 
+        uint16 fee = checkNftDiscount(borrower, feeRate.borrowingFeeRate);
+
         _doTransferOutWithFee(
             borrower,
             _underlyingAmount,
-            feeRate.borrowingFeeRate
+            fee
         );
 
         emit Borrow(
@@ -824,10 +868,13 @@ contract HBARProtocol is
         supplySnapshot.claimed += amount;
         _totalSupply -= claimShareAmount;
         accountBalance[claimer] -= claimShareAmount;
+
+        uint16 fee = checkNftDiscount(claimer, feeRate.claimingFeeRate);
+
         _doTransferOutWithFee(
             claimer,
             amount,
-            feeRate.claimingFeeRate
+            fee
         );
 
         emit InterestsClaimed(claimer, amount);
@@ -1130,10 +1177,12 @@ contract HBARProtocol is
             accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
         }
 
+        uint16 fee = checkNftDiscount(_redeemer, feeRate.redeemingFeeRate);
+
         _doTransferOutWithFee(
             _redeemer,
             redeemUnderlyingAmount,
-            feeRate.redeemingFeeRate
+            fee
         );
     }
 
