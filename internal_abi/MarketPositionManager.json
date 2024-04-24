@@ -58,6 +58,32 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "HBARprice",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "HealthcareThreshold",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "address",
@@ -111,6 +137,116 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "borrowerList",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "borrower",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "liquidateAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "calcLiquidationDetail",
+    "outputs": [
+      {
+        "internalType": "address[]",
+        "name": "suppliedAssets",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "liquidateAmounts",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "address[]",
+        "name": "borrowedAssets",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "borrowedAmounts",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_borrower",
+        "type": "address"
+      }
+    ],
+    "name": "checkHealthcare",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "checkLiquidation",
+    "outputs": [
+      {
+        "internalType": "address[]",
+        "name": "borrowers",
+        "type": "address[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "debts",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint256[]",
+        "name": "reward",
+        "type": "uint256[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "_token",
         "type": "address"
@@ -155,6 +291,25 @@
     "inputs": [
       {
         "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "getAccountAssets",
+    "outputs": [
+      {
+        "internalType": "address[]",
+        "name": "",
+        "type": "address[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "_account",
         "type": "address"
       },
@@ -179,45 +334,16 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "_borrowToken",
+        "name": "_account",
         "type": "address"
       },
       {
         "internalType": "address",
-        "name": "_borrower",
+        "name": "_token",
         "type": "address"
       }
     ],
-    "name": "getLiquidableAmount",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_borrowToken",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_seizeToken",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_borrower",
-        "type": "address"
-      }
-    ],
-    "name": "getLiquidableAmountWithSeizeToken",
+    "name": "getRedeemableAmount",
     "outputs": [
       {
         "internalType": "uint256",
@@ -239,6 +365,11 @@
         "internalType": "uint16",
         "name": "_maxLiquidateRate",
         "type": "uint16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_healthcareThreshold",
+        "type": "uint256"
       }
     ],
     "name": "initialize",
@@ -250,29 +381,23 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "_borrowToken",
+        "name": "_borrower",
         "type": "address"
       },
       {
         "internalType": "address",
-        "name": "_seizeToken",
+        "name": "_token",
         "type": "address"
       },
       {
         "internalType": "uint256",
-        "name": "_repayAmount",
+        "name": "_amount",
         "type": "uint256"
       }
     ],
-    "name": "liquidateCalculateSeizeTokens",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
+    "name": "liquidateBorrow",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -371,19 +496,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "seizeGuardianPaused",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address[]",
@@ -475,6 +587,32 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "thresold",
+        "type": "uint256"
+      }
+    ],
+    "name": "updateHealthcareT",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "price",
+        "type": "uint256"
+      }
+    ],
+    "name": "updatePrice",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "_token",
         "type": "address"
@@ -505,12 +643,7 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "_tokenBorrowed",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_tokenSeize",
+        "name": "_liquidator",
         "type": "address"
       },
       {
@@ -525,7 +658,13 @@
       }
     ],
     "name": "validateLiquidate",
-    "outputs": [],
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
     "stateMutability": "view",
     "type": "function"
   },
@@ -555,24 +694,6 @@
         "type": "bool"
       }
     ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_seizeToken",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_borrowToken",
-        "type": "address"
-      }
-    ],
-    "name": "validateSeize",
-    "outputs": [],
     "stateMutability": "view",
     "type": "function"
   },
