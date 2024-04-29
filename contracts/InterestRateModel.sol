@@ -28,7 +28,7 @@ contract InterestRateModel is Ownable2Step, IInterestRateModel {
     /// @param _multiplierPerYear The rate of increase in interest rate wrt utilization (scaled by 1e18)
     /// @param _jumpMultiplierPerYear The multiplierPerBlock after hitting a specified utilization point
     /// @param _kink The utilization point at which the jump multiplier is applied
-    /// @param owner_ Sets the owner of the contract to someone other than msgSender
+    /// @param _owner Sets the owner of the contract to someone other than msgSender
     /// @param _name User-friendly name for the new contract
     constructor(
         uint256 _blocksPerYear,
@@ -36,12 +36,12 @@ contract InterestRateModel is Ownable2Step, IInterestRateModel {
         uint256 _multiplierPerYear,
         uint256 _jumpMultiplierPerYear,
         uint256 _kink,
-        address owner_,
+        address _owner,
         string memory _name
     ) Ownable(msg.sender) {
         blocksPerYear = _blocksPerYear;
         name = _name;
-        _transferOwnership(owner_);
+        _transferOwnership(_owner);
         updateJumpRateModelInternal(
             _baseRatePerYear,
             _multiplierPerYear,

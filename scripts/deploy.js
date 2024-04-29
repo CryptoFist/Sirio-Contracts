@@ -117,6 +117,21 @@ async function main() {
     "hbarxl"
   );
 
+  const HSUITELending = await deploy(
+    "SFProtocolToken",
+    "SFProtocolToken",
+    feeRate,
+    param.HSUITE,
+    interestRateModel.address,
+    marketPositionManager.address,
+    nft.address,
+    param.initialExchangeRateMantissa,
+    param.dexRouterV2Address,
+    param.HBAR,
+    "hsuite",
+    "hsuitel"
+  );
+
   console.log("Deployed successfully!");
 
   const marketManager = await ethers.getContractAt(
@@ -130,6 +145,7 @@ async function main() {
   await marketManager.addToMarket(WETHlending.address);
   await marketManager.addToMarket(HBARlending.address);
   await marketManager.addToMarket(HBARXlending.address);
+  await marketManager.addToMarket(HSUITELending.address);
 
   await marketManager.setBorrowCaps(
     [
@@ -138,8 +154,9 @@ async function main() {
       WETHlending.address,
       HBARlending.address,
       HBARXlending.address,
+      HSUITELending.address,
     ],
-    [77, 78, 80, 60, 58]
+    [77, 78, 80, 60, 58, 60]
   );
 
   const usdclendingContract = await ethers.getContractAt(
@@ -169,6 +186,13 @@ async function main() {
     deployer
   );
   await hbarxlendingContract.tokenAssociate(param.HBARX);
+
+  const hsuitelendingContract = await ethers.getContractAt(
+    "SFProtocolToken",
+    HSUITELending.address,
+    deployer
+  );
+  await hsuitelendingContract.tokenAssociate(param.HSUITE);
   console.log("setting environment successfully!");
 }
 

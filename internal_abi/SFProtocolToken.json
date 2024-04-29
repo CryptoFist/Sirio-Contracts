@@ -888,21 +888,21 @@
         "type": "address"
       }
     ],
-    "name": "getAllBalance",
+    "name": "getAllBalances",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "_accountBalance",
+        "name": "",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "_accountBorrow",
+        "name": "",
         "type": "uint256"
       },
       {
         "internalType": "uint256",
-        "name": "_accountSupplies",
+        "name": "",
         "type": "uint256"
       }
     ],

@@ -631,18 +631,20 @@ contract HBARProtocol is
        }
    }
 
-    /// @notice This function provides a view to get all balance related information for a user
-    /// @dev Returns the current account balance, borrow balance, and supplies for the user
-    /// @param _user The address of the user whose balance information is being queried
-    /// @return _accountBalance The current account balance of the user
-    /// @return _accountBorrow The current borrow balance of the user
-    /// @return _accountSupplies The current supply balance of the user
-    function getAllBalance(address _user) external view returns(uint256 _accountBalance, uint256 _accountBorrow, uint256 _accountSupplies) {
+    /// @notice Retrieves comprehensive balance details for a specified user.
+    /// @dev This function fetches and returns various types of balance information
+    /// including borrow balance, supply principal, and claimable interests
+    /// associated with the user's account.
+    /// @param _user The address of the user whose balance information is being queried.
+    /// @return borrowBalance The current borrow balance of the user.
+    /// @return supplyPrincipal The principal supply balance of the user.
+    /// @return claimableInterests The interests that the user can currently claim.
+    function getAllBalances(address _user) external view returns(uint256 , uint256 , uint256) {
+        (, uint256 borrowBalance, ) = getAccountSnapshot(_user);
         return (
-            accountBalance[_user],
-            accountBorrows[_user].principal,
-            accountSupplies[_user].principal
-
+            borrowBalance,
+            accountSupplies[_user].principal,
+            getClaimableInterests(_user)
         );
     }
 

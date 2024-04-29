@@ -22,13 +22,13 @@ interface ISFProtocolToken {
     }
 
     // /// @notice The address of marketPositionManager.
-    // function marketPositionManager() external view returns (address);
+    function marketPositionManager() external view returns (address);
 
     /// @notice Get the address of underlying.
     function underlyingToken() external view returns (address);
 
     // /// @notice Total amount of outstanding borrows of the underlying in this market
-    // function totalBorrows() external view returns (uint256);
+    function totalBorrows() external view returns (uint256);
 
     /// @notice Get underlying balance of SFProtocol token.
     function getUnderlyingBalance() external view returns (uint256);

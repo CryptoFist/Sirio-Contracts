@@ -26,6 +26,7 @@ const DEPLOYMENT_PARAM = {
         WETH : "0x0000000000000000000000000000000000226df7",
         HBAR : "0x0000000000000000000000000000000000003aD2",
         HBARX : "0x0000000000000000000000000000000000226dff",
+        HSUITE: "0x0000000000000000000000000000000000219d8e",
         maxLiquidateRate: 10000, // 100%
         initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
         healthcareThresold:ethers.utils.parseUnits("0.95"),

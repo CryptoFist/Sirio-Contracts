@@ -15,7 +15,17 @@ import "./interfaces/IInterestRateModel.sol";
 import "./interfaces/IMarketPositionManager.sol";
 import "./interfaces/IUniswapV2Router.sol";
 
-contract SFProtocolToken is
+
+// dive into these toppics
+// automated market maker
+// price oracle
+// TWAP
+// slippage
+// impermanent loss
+// staking
+// compounding
+
+contract SFProtocolTokenV2 is
     ERC20,
     Ownable2Step,
     Pausable,
@@ -28,7 +38,7 @@ contract SFProtocolToken is
     /// @notice interface for nft collection
     IERC721 public nftCollection;
 
-    /// @notice Procentual Share in protocol amount per user
+    /// @notice Share amount per user. // clarify this one?
     mapping(address => uint256) private accountBalance;
 
     /// @notice Borrowed underlying token amount per user.
@@ -41,7 +51,7 @@ contract SFProtocolToken is
     FeeRate public feeRate;
 
     /// @inheritdoc ISFProtocolToken
-    address public override underlyingToken;
+    address public underlyingToken;
 
     ///@notice saucerswap router address
     address public swapRouter;
@@ -49,7 +59,6 @@ contract SFProtocolToken is
     /// @notice The address of interestRateModel contract.
     address public interestRateModel;
 
-    /// @notice The address of marketPositionManager contract.
     address public marketPositionManager;
 
     /// @notice The initialExchangeRate that will be applied for first time.
@@ -58,7 +67,6 @@ contract SFProtocolToken is
     /// @notice Block number that interest was last accrued at
     uint256 public accrualBlockNumber;
 
-    /// @notice Total amount of outstanding borrows of the underlying in this market
     uint256 public totalBorrows;
 
     /// @notice Total amount of reserves of the underlying held in this market
@@ -90,8 +98,20 @@ contract SFProtocolToken is
 
     /// @notice wrapped HBAR token address
     address public HBARaddress;
-    
 
+    /**
+     * @notice Constructor to create a new lending and borrowing market token
+     * @param _feeRate Structure containing the fee rate for borrowing
+     * @param _underlyingToken Address of the underlying token for the lending market
+     * @param _interestRateModel Address of the interest rate model contract
+     * @param _marketPositionManager Address of the market position manager
+     * @param _initialExchangeRateMantissa Initial exchange rate used for calculating the initial amount of tokens minted
+     * @param _router Address of the token swap router
+     * @param _basetoken Address of the base token used in swap operations
+     * @param _name ERC20 token name
+     * @param _symbol ERC20 token symbol
+     * @dev Sets up the initial state of the contract including constants and essential state variables. It checks for valid addresses and positive rate mantissa.
+     */
     constructor(
         FeeRate memory _feeRate,
         address _underlyingToken,
@@ -103,7 +123,7 @@ contract SFProtocolToken is
         address _basetoken,
         string memory _name,
         string memory _symbol
-    )  ERC20(_name, _symbol) Ownable(msg.sender) {
+    ) ERC20(_name, _symbol) Ownable(msg.sender) {
         require(_underlyingToken != address(0), "invalid underlying token");
         require(
             _initialExchangeRateMantissa > 0,
@@ -113,7 +133,6 @@ contract SFProtocolToken is
             _marketPositionManager != address(0),
             "invalid marketPositionManager address"
         );
-
         nftCollection = IERC721(_nftCollection);
 
         // set basic args
@@ -133,7 +152,7 @@ contract SFProtocolToken is
         borrowIndex = 1e18;
     }
 
-    modifier onlyManager{
+    modifier onlyManager() {
         require(msg.sender == marketPositionManager, "caller is not manager");
         _;
     }
@@ -145,20 +164,27 @@ contract SFProtocolToken is
         return accountBalance[_account];
     }
 
-    function setFeeRate(
-        FeeRate memory _feeRate
-    ) external onlyOwner{
+    function setFeeRate(FeeRate memory _feeRate) external onlyOwner {
         feeRate = _feeRate;
     }
 
-    function tokenAssociate(address tokenId) external {
-       int response = HederaTokenService.associateToken(address(this), tokenId);
- 
-       if (response != HederaResponseCodes.SUCCESS) {
-           revert ("Associate Failed");
-       }
-   }
+    function setBorrowCaps(
+        address[] memory _tokens,
+        uint256[] memory _borrowCaps
+    ) external onlyOwner {
 
+    }
+
+    function tokenAssociate(address tokenId) external {
+        int response = HederaTokenService.associateToken(
+            address(this),
+            tokenId
+        );
+
+        if (response != HederaResponseCodes.SUCCESS) {
+            revert("Associate Failed");
+        }
+    }
 
     /// @notice Retrieves comprehensive balance details for a specified user.
     /// @dev This function fetches and returns various types of balance information
@@ -174,8 +200,12 @@ contract SFProtocolToken is
             borrowBalance,
             accountSupplies[_user].principal,
             getClaimableInterests(_user)
+
         );
     }
+
+
+    // account balance, getClaimbleInterest, look into get account snapshot
 
     /// @notice Calculates the fee discount based on the number of NFTs a user holds
     /// @dev Returns a reduced fee based on the number of NFTs the user holds
@@ -346,6 +376,7 @@ contract SFProtocolToken is
         accountBorrows[borrower].interestIndex = borrowIndex;
         totalBorrows = totalBorrowsNew;
 
+
         uint16 fee = checkNftDiscount(borrower, feeRate.borrowingFeeRate);
 
         _doTransferOutWithFee(
@@ -375,7 +406,7 @@ contract SFProtocolToken is
     }
 
     /// @inheritdoc ISFProtocolToken
-    function claimInterests(uint256 amount) external override {
+    function claimInterests(uint256 amount) external {
         address claimer = msg.sender;
         SupplySnapshot storage supplySnapshot = accountSupplies[claimer];
         uint256 claimableInterests = getClaimableInterests(claimer);
@@ -393,9 +424,7 @@ contract SFProtocolToken is
             totalReserves
         );
 
-        claimUnderlyingAmount = convertUnderlyingToShare(
-            amount
-        );
+        claimUnderlyingAmount = convertUnderlyingToShare(amount);
         claimShareAmount = (claimUnderlyingAmount * 1e18) / exchangeRate;
 
         totalClaimed += amount;
@@ -410,7 +439,7 @@ contract SFProtocolToken is
             amount,
             fee
         );
-
+        
         emit InterestsClaimed(claimer, amount);
     }
 
@@ -437,12 +466,15 @@ contract SFProtocolToken is
             totalBorrows,
             totalReserves
         );
-        uint256 shareAmount = ( _seizeAmount * 1e18 )/ exchangeRate;
+        uint256 shareAmount = (_seizeAmount * 1e18) / exchangeRate;
         uint256 underlyingAmount = convertToUnderlying(_seizeAmount);
         require(accountBalance[_borrower] >= shareAmount, "invalid balance");
         accountBalance[_borrower] -= shareAmount;
         accountBalance[_liquidator] += shareAmount;
-        accountSupplies[_borrower].principal = accountSupplies[_borrower].principal >= underlyingAmount ? accountSupplies[_borrower].principal - underlyingAmount : 0;
+        accountSupplies[_borrower].principal = accountSupplies[_borrower]
+            .principal >= underlyingAmount
+            ? accountSupplies[_borrower].principal - underlyingAmount
+            : 0;
         accountSupplies[_liquidator].principal += underlyingAmount;
         emit Transfer(_borrower, _liquidator, shareAmount);
     }
@@ -451,24 +483,23 @@ contract SFProtocolToken is
     function seizeToprotocol(
         address _borrower,
         uint256 _seizeAmount
-    ) external override nonReentrant onlyManager {
+    ) external nonReentrant onlyManager {
         uint256 exchangeRate = _exchangeRateStoredInternal(
             totalBorrows,
             totalReserves
         );
-        uint256 shareAmount = ( _seizeAmount * 1e18 )/ exchangeRate;
+        uint256 shareAmount = (_seizeAmount * 1e18) / exchangeRate;
         uint256 underlyingAmount = convertToUnderlying(_seizeAmount);
         totalReserves += _seizeAmount;
         require(_totalSupply >= shareAmount, "invalid seize amount");
         _totalSupply = _totalSupply - shareAmount;
         accountBalance[_borrower] -= shareAmount;
-        accountSupplies[_borrower].principal = accountSupplies[_borrower].principal >= underlyingAmount ? accountSupplies[_borrower].principal - underlyingAmount : 0;
+        accountSupplies[_borrower].principal = accountSupplies[_borrower]
+            .principal >= underlyingAmount
+            ? accountSupplies[_borrower].principal - underlyingAmount
+            : 0;
         emit Transfer(_borrower, address(this), shareAmount);
-        emit ReservesAdded(
-            address(this),
-            _seizeAmount,
-            totalReserves
-        );
+        emit ReservesAdded(address(this), _seizeAmount, totalReserves);
     }
 
     /// @inheritdoc ISFProtocolToken
@@ -477,48 +508,68 @@ contract SFProtocolToken is
         address _borrower,
         address _borrowedToken,
         uint256 _repayAmount
-    ) external override onlyManager {
+    ) external onlyManager {
         require(_repayAmount > 0, "invalid liquidate amount");
         uint256 liquidatorBalance = getSuppliedAmount(_liquidator);
-        if(_borrowedToken == address(this)){
+        if (_borrowedToken == address(this)) {
             _accrueInterest();
-            ( , uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
+            (, uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
             // uint256 accountBorrowsPrior = _borrowBalanceStoredInternal(
             //     _borrower,
             //     borrowIndex
             // );
-            require(accountBorrowsPrior >= _repayAmount, "liquidate amount can't be bigger than borrow amount");
+            require(
+                accountBorrowsPrior >= _repayAmount,
+                "liquidate amount can't be bigger than borrow amount"
+            );
             uint256 accountBorrowsNew = accountBorrowsPrior - _repayAmount;
-            require(totalBorrows >= _repayAmount, "can't be bigger than total borrow");
+            require(
+                totalBorrows >= _repayAmount,
+                "can't be bigger than total borrow"
+            );
             uint256 totalBorrowsNew = totalBorrows - _repayAmount;
             accountBorrows[_borrower].principal = accountBorrowsNew;
             accountBorrows[_borrower].interestIndex = borrowIndex;
             totalBorrows = totalBorrowsNew;
-        }
-        else{
+        } else {
             address token1 = underlyingToken;
             address token2 = ISFProtocolToken(_borrowedToken).underlyingToken();
-            uint256 outputAmount = ISFProtocolToken(_borrowedToken).convertToUnderlying(_repayAmount);
+            uint256 outputAmount = ISFProtocolToken(_borrowedToken)
+                .convertToUnderlying(_repayAmount);
             address[] memory path = new address[](2);
             path[0] = token1;
             path[1] = token2;
-            uint256[] memory amounts = IUniswapV2Router01(swapRouter).getAmountsIn(
-                outputAmount,
-                path
-            );
+            uint256[] memory amounts = IUniswapV2Router01(swapRouter)
+                .getAmountsIn(outputAmount, path);
             require(amounts[1] == outputAmount, "invalid swap amount");
             IERC20(token1).approve(swapRouter, amounts[0]);
-            require(amounts[0] <= liquidatorBalance, "liquidator don't have enough assets");
+            require(
+                amounts[0] <= liquidatorBalance,
+                "liquidator don't have enough assets"
+            );
             uint256 beforeBalance = getUnderlyingBalance();
             uint256 deadline = block.timestamp + 1000;
-            if(token2 == HBARaddress){
-                IUniswapV2Router01(swapRouter).swapTokensForExactETH(outputAmount, (amounts[0]), path, _borrowedToken, deadline);
-            }
-            else{
-                IUniswapV2Router01(swapRouter).swapTokensForExactTokens(outputAmount, (amounts[0]), path, _borrowedToken, deadline);
+            if (token2 == HBARaddress) {
+                IUniswapV2Router01(swapRouter).swapTokensForExactETH(
+                    outputAmount,
+                    (amounts[0]),
+                    path,
+                    _borrowedToken,
+                    deadline
+                );
+            } else {
+                IUniswapV2Router01(swapRouter).swapTokensForExactTokens(
+                    outputAmount,
+                    (amounts[0]),
+                    path,
+                    _borrowedToken,
+                    deadline
+                );
             }
             uint256 afterBalance = getUnderlyingBalance();
-            _repayAmount = convertUnderlyingToShare(beforeBalance - afterBalance);
+            _repayAmount = convertUnderlyingToShare(
+                beforeBalance - afterBalance
+            );
         }
 
         uint256 exchangeRate = _exchangeRateStoredInternal(
@@ -527,7 +578,10 @@ contract SFProtocolToken is
         );
         uint256 liquidateShareAmount = (_repayAmount * 1e18) / exchangeRate;
         uint256 liquidateUnderlyingAmount = convertToUnderlying(_repayAmount);
-        require(liquidatorBalance >= liquidateUnderlyingAmount, "liquidator don't have enough assets");
+        require(
+            liquidatorBalance >= liquidateUnderlyingAmount,
+            "liquidator don't have enough assets"
+        );
         _totalSupply -= liquidateShareAmount;
         accountBalance[_liquidator] -= liquidateShareAmount;
         accountSupplies[_liquidator].principal -= liquidateUnderlyingAmount;
@@ -541,12 +595,21 @@ contract SFProtocolToken is
         );
     }
 
-    function removeBorrow(address _borrower, uint256 _amount) external onlyManager{
-         _accrueInterest();
-        ( , uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
-        uint256 accountBorrowsNew = accountBorrowsPrior < _amount ? 0 : accountBorrowsPrior - _amount;
-        uint256 totalBorrowsNew = totalBorrows >= _amount ? (totalBorrows - _amount) : 0;
-        totalReserves += accountBorrowsPrior >= _amount ? 0 : (_amount - accountBorrowsPrior);
+    function removeBorrow(
+        address _borrower,
+        uint256 _amount
+    ) external onlyManager {
+        _accrueInterest();
+        (, uint256 accountBorrowsPrior, ) = getAccountSnapshot(_borrower);
+        uint256 accountBorrowsNew = accountBorrowsPrior < _amount
+            ? 0
+            : accountBorrowsPrior - _amount;
+        uint256 totalBorrowsNew = totalBorrows >= _amount
+            ? (totalBorrows - _amount)
+            : 0;
+        totalReserves += accountBorrowsPrior >= _amount
+            ? 0
+            : (_amount - accountBorrowsPrior);
         accountBorrows[_borrower].principal = accountBorrowsNew;
         accountBorrows[_borrower].interestIndex = borrowIndex;
         totalBorrows = totalBorrowsNew;
@@ -705,11 +768,12 @@ contract SFProtocolToken is
 
         _totalSupply -= redeemShareAmount;
         accountBalance[_redeemer] -= redeemShareAmount;
-        if(redeemUnderlyingAmount > accountSupplies[_redeemer].principal){
+        if (redeemUnderlyingAmount > accountSupplies[_redeemer].principal) {
             uint256 interest = getClaimableInterests(_redeemer);
-            accountSupplies[_redeemer].principal -= redeemUnderlyingAmount - interest;
-        }
-        else{
+            accountSupplies[_redeemer].principal -=
+                redeemUnderlyingAmount -
+                interest;
+        } else {
             accountSupplies[_redeemer].principal -= redeemUnderlyingAmount;
         }
 
@@ -774,7 +838,7 @@ contract SFProtocolToken is
             IERC20(underlyingToken).safeTransfer(owner(), feeAmount);
         }
 
-         IERC20(underlyingToken).safeTransfer(_to, transferAmount);
+        IERC20(underlyingToken).safeTransfer(_to, transferAmount);
     }
 
     /// @notice Return the borrow balance of account based on stored data.
