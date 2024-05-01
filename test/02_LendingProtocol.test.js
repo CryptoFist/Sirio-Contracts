@@ -21,11 +21,10 @@ const {
 describe("Sirio Finance Protocol test", function () {
     let feeRate, param, underlyingTokenAddress, name, symbol;
     before(async function () {
-        [this.deployer, this.tester] =
-            await ethers.getSigners();
+        [this.deployer, this.tester] = await ethers.getSigners();
 
         param = getDeploymentParam();
-        underlyingTokenAddress = param.WBTC;
+        underlyingTokenAddress = param.WBTCAddress;
         name = "Sirio USD Coin";
         symbol = "sfUSD";
         feeRate = {
@@ -35,13 +34,13 @@ describe("Sirio Finance Protocol test", function () {
         };
 
         this.WBTC = new ethers.Contract(
-            param.WBTC,
+            param.WBTCAddress,
             erc20_abi,
             this.deployer
         );
 
         this.WETH = new ethers.Contract(
-            param.WETH,
+            param.WETHAddress,
             WETH_abi,
             this.deployer
         );
@@ -67,50 +66,70 @@ describe("Sirio Finance Protocol test", function () {
         this.priceOracle = await deploy(
             "PriceOracle",
             "PriceOracle",
-            param.HBAR,
+            param.USDCAddress,
             param.dexRouterV2Address
         );
 
         this.marketPositionManager = await deployProxy(
             "MarketPositionManager",
             "MarketPositionManager",
-            [this.priceOracle.address, param.maxLiquidateRate]
+            [
+                this.priceOracle.address,
+                param.maxLiquidateRate,
+                BigInt(param.healthcareThresold),
+            ]
         );
 
-        this.sfWBTC = await deploy("SFProtocolToken", "SFProtocolToken",
+        this.NftToken = await deploy(
+            "NftToken",
+            "NftToken",
+            this.deployer.address
+        );
+
+        this.sfWBTC = await deploy(
+            "SFProtocolToken",
+            "SFProtocolToken",
             feeRate,
             underlyingTokenAddress,
             this.interestRateModel.address,
             this.marketPositionManager.address,
+            this.NftToken.address,
             param.initialExchangeRateMantissa,
+            this.dexRouter.address,
+            param.USDCAddress,
             name,
-            symbol,
+            symbol
         );
 
-        this.sfHBAR = await deploy("HBARProtocol", "HBARProtocol",
+        this.sfHBAR = await deploy(
+            "HBARProtocol",
+            "HBARProtocol",
             feeRate,
-            param.HBAR,
+            param.USDCAddress,
             this.interestRateModel.address,
             this.marketPositionManager.address,
+            this.NftToken.address,
             param.initialExchangeRateMantissa,
+            this.dexRouter.address,
             "Sirio Wrapped HBAR",
-            "sfHBAR",
+            "sfHBAR"
         );
 
-        await this.marketPositionManager.setBorrowCaps([this.sfWBTC.address, this.sfHBAR.address],[78, 60]);
-
+        await this.marketPositionManager.setBorrowCaps(
+            [this.sfWBTC.address, this.sfHBAR.address],
+            [78, 60]
+        );
     });
 
     it("check deployment", async function () {
         console.log("deployed successfully!");
     });
-    
+
     describe("pause and check functions", function () {
         describe("pause", function () {
             it("reverts if caller is not the owner", async function () {
-                await expect(
-                    this.sfWBTC.connect(this.tester).pause()
-                ).to.be.reverted;
+                await expect(this.sfWBTC.connect(this.tester).pause()).to.be
+                    .reverted;
             });
 
             it("pause", async function () {
@@ -124,17 +143,14 @@ describe("Sirio Finance Protocol test", function () {
 
         describe("check functions that it reverts", function () {
             it("supplyUnderlying", async function () {
-                await expect(
-                    this.sfWBTC.supplyUnderlying(100)
-                ).to.be.reverted;
+                await expect(this.sfWBTC.supplyUnderlying(100)).to.be.reverted;
             });
 
             it("redeem", async function () {
                 await expect(this.sfWBTC.redeem(100)).to.be.reverted;
 
-                await expect(
-                    this.sfWBTC.redeemExactUnderlying(1000)
-                ).to.be.reverted;
+                await expect(this.sfWBTC.redeemExactUnderlying(1000)).to.be
+                    .reverted;
             });
 
             it("borrow", async function () {
@@ -145,9 +161,8 @@ describe("Sirio Finance Protocol test", function () {
 
     describe("unpause", function () {
         it("reverts if caller is not the owner", async function () {
-            await expect(
-                this.sfWBTC.connect(this.tester).unpause()
-            ).to.be.reverted;
+            await expect(this.sfWBTC.connect(this.tester).unpause()).to.be
+                .reverted;
         });
 
         it("unpause", async function () {
@@ -163,19 +178,15 @@ describe("Sirio Finance Protocol test", function () {
         let supplyAmount = 100000000;
 
         it("reverts if supply amount is invalid", async function () {
-            await expect(
-                this.sfWBTC.supplyUnderlying(0)
-            ).to.be.reverted;
+            await expect(this.sfWBTC.supplyUnderlying(0)).to.be.reverted;
         });
 
         it("reverts if token is not listed", async function () {
-            await expect(
-                this.sfWBTC.supplyUnderlying(supplyAmount)
-            ).to.be.reverted;
+            await expect(this.sfWBTC.supplyUnderlying(supplyAmount)).to.be
+                .reverted;
         });
 
         it("add WBTC and HBAR to markets", async function () {
-
             // add sfWBTC to markets
             await this.marketPositionManager.addToMarket(this.sfWBTC.address);
             await this.marketPositionManager.addToMarket(this.sfHBAR.address);
@@ -187,17 +198,15 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("reverts if token is not approved", async function () {
-            await expect(
-                this.sfWBTC.supplyUnderlying(BigInt(supplyAmount))
-            ).to.be.reverted;
+            await expect(this.sfWBTC.supplyUnderlying(BigInt(supplyAmount))).to
+                .be.reverted;
             await this.WBTC.approve(this.sfWBTC.address, BigInt(supplyAmount));
         });
 
         it("reverts if token is not associated", async function () {
-            await expect(
-                this.sfWBTC.supplyUnderlying(BigInt(supplyAmount))
-            ).to.be.reverted;
-            await this.sfWBTC.tokenAssociate(param.WBTC);
+            await expect(this.sfWBTC.supplyUnderlying(BigInt(supplyAmount))).to
+                .be.reverted;
+            await this.sfWBTC.tokenAssociate(param.WBTCAddress);
         });
 
         it("supply and check", async function () {
@@ -222,9 +231,7 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("supply again and check", async function () {
-            let originShare = await this.sfWBTC.balanceOf(
-                this.tester.address
-            );
+            let originShare = await this.sfWBTC.balanceOf(this.tester.address);
             await this.WBTC.connect(this.tester).approve(
                 this.sfWBTC.address,
                 BigInt(supplyAmount)
@@ -244,9 +251,8 @@ describe("Sirio Finance Protocol test", function () {
     describe("redeem & redeemExactUnderlying", function () {
         describe("redeem", function () {
             it("reverts if share amount is invalid", async function () {
-                await expect(
-                    this.sfWBTC.connect(this.deployer).redeem(0)
-                ).to.be.reverted;
+                await expect(this.sfWBTC.connect(this.deployer).redeem(0)).to.be
+                    .reverted;
             });
 
             it("redeem and check", async function () {
@@ -374,11 +380,13 @@ describe("Sirio Finance Protocol test", function () {
             let suppliedAmount = await this.sfWBTC.getSuppliedAmount(
                 this.deployer.address
             );
-            expect(borrowableAmount).to.be.equal(suppliedAmount*0.78, 0.01);
+            expect(borrowableAmount).to.be.equal(suppliedAmount * 0.78, 0.01);
             let beforeBal = await this.WBTC.balanceOf(this.deployer.address);
-            await this.sfWBTC.connect(this.deployer).borrow(BigInt(borrowAmount))
+            await this.sfWBTC
+                .connect(this.deployer)
+                .borrow(BigInt(borrowAmount));
             let afterBal = await this.WBTC.balanceOf(this.deployer.address);
-            expect(afterBal-beforeBal).to.be.equal(borrowAmount);
+            expect(afterBal - beforeBal).to.be.equal(borrowAmount);
         });
 
         it("reverts if not enough supply pool even though borrower has enough collateral", async function () {
@@ -408,25 +416,27 @@ describe("Sirio Finance Protocol test", function () {
 
         it("supply HBAR with tester", async function () {
             let supplyAmount = bigNum(5, 18);
-            
+
             await this.sfHBAR
                 .connect(this.tester)
-                .supplyUnderlying(BigInt(supplyAmount/10**10),{
+                .supplyUnderlying(BigInt(supplyAmount / 10 ** 10), {
                     value: BigInt(supplyAmount),
                 });
         });
 
         it("check borrowable WBTC amount", async function () {
-            let supplyHBARAmount = await this.sfHBAR.getSuppliedAmount(this.tester.address);
+            let supplyHBARAmount = await this.sfHBAR.getSuppliedAmount(
+                this.tester.address
+            );
             let borrowableWBTCAmount =
                 await this.marketPositionManager.getBorrowableAmount(
                     this.tester.address,
                     this.sfWBTC.address
                 );
             let WBTCprice = await this.priceOracle.getTokenPrice(this.WBTC);
-            expect(BigInt(borrowableWBTCAmount)*BigInt(WBTCprice)/10**6).to.be.equal(
-                BigInt(supplyHBARAmount)*BigInt(60)/10**10
-            );
+            expect(
+                (BigInt(borrowableWBTCAmount) * BigInt(WBTCprice)) / 10 ** 6
+            ).to.be.equal((BigInt(supplyHBARAmount) * BigInt(60)) / 10 ** 10);
         });
 
         it("borrow WBTC", async function () {
@@ -436,9 +446,7 @@ describe("Sirio Finance Protocol test", function () {
                     this.sfWBTC.address
                 );
 
-            let beforeWBTCBal = await this.WBTC.balanceOf(
-                this.tester.address
-            );
+            let beforeWBTCBal = await this.WBTC.balanceOf(this.tester.address);
             let [, beforeBorrowedAmount] = await this.sfWBTC.getAccountSnapshot(
                 this.tester.address
             );
@@ -463,9 +471,7 @@ describe("Sirio Finance Protocol test", function () {
             ).to.be.equal(true);
 
             let afterSupplyRate = await this.sfWBTC.supplyRatePerBlock();
-            let afterWBTCBal = await this.WBTC.balanceOf(
-                this.tester.address
-            );
+            let afterWBTCBal = await this.WBTC.balanceOf(this.tester.address);
             let [, afterBorrowedAmount] = await this.sfWBTC.getAccountSnapshot(
                 this.tester.address
             );
@@ -540,9 +546,8 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("reverts if not insufficient pool to provide interests", async function () {
-            await expect(
-                this.sfWBTC.connect(this.deployer).claimInterests()
-            ).to.be.reverted;
+            await expect(this.sfWBTC.connect(this.deployer).claimInterests()).to
+                .be.reverted;
         });
     });
 
@@ -550,9 +555,7 @@ describe("Sirio Finance Protocol test", function () {
         describe("repayBorrow", function () {
             it("reverts if no repayAmount", async function () {
                 let [shareAmount, repayAmount] =
-                    await this.sfWBTC.getAccountSnapshot(
-                        this.tester.address
-                    );
+                    await this.sfWBTC.getAccountSnapshot(this.tester.address);
                 repayAmount = BigInt(repayAmount) * BigInt(2);
 
                 await expect(
@@ -564,9 +567,7 @@ describe("Sirio Finance Protocol test", function () {
 
             it("get debt amount", async function () {
                 let [shareAmount, beforeRepayAmount] =
-                    await this.sfWBTC.getAccountSnapshot(
-                        this.tester.address
-                    );
+                    await this.sfWBTC.getAccountSnapshot(this.tester.address);
                 let repayAmount =
                     BigInt(beforeRepayAmount) /
                     BigInt(bigNum(1, 12)) /
@@ -596,7 +597,6 @@ describe("Sirio Finance Protocol test", function () {
             });
         });
 
-
         describe("claimInterests", function () {
             it("claimInterests and check", async function () {
                 let claimableInterests =
@@ -613,11 +613,11 @@ describe("Sirio Finance Protocol test", function () {
                     this.deployer.address
                 );
 
-                await this.sfWBTC.connect(this.deployer).claimInterests(claimableInterests);
+                await this.sfWBTC
+                    .connect(this.deployer)
+                    .claimInterests(claimableInterests);
 
-                let afterBal = await this.WBTC.balanceOf(
-                    this.deployer.address
-                );
+                let afterBal = await this.WBTC.balanceOf(this.deployer.address);
                 let afterSuppliedAmount = await this.sfWBTC.getSuppliedAmount(
                     this.deployer.address
                 );
@@ -638,5 +638,4 @@ describe("Sirio Finance Protocol test", function () {
             });
         });
     });
-
 });

@@ -21,15 +21,15 @@ const DEPLOYMENT_PARAM = {
     },
     hedera_testnet: {
         dexRouterV2Address: "0x0000000000000000000000000000000000004b40", // SaucerSwap
-        USDC:"0x0000000000000000000000000000000000226dec",
-        WBTC : "0x0000000000000000000000000000000000226df2",
-        WETH : "0x0000000000000000000000000000000000226df7",
-        HBAR : "0x0000000000000000000000000000000000003aD2",
-        HBARX : "0x0000000000000000000000000000000000226dff",
+        USDC: "0x0000000000000000000000000000000000226dec",
+        WBTC: "0x0000000000000000000000000000000000226df2",
+        WETH: "0x0000000000000000000000000000000000226df7",
+        HBAR: "0x0000000000000000000000000000000000003aD2",
+        HBARX: "0x0000000000000000000000000000000000226dff",
         HSUITE: "0x0000000000000000000000000000000000219d8e",
         maxLiquidateRate: 10000, // 100%
         initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
-        healthcareThresold:ethers.utils.parseUnits("0.95"),
+        healthcareThresold: ethers.utils.parseUnits("0.95"),
         interestRate: {
             blocksPerYear: 365 * 24 * 60 * 60,
             baseRatePerYear: ethers.utils.parseEther("0.8"),
@@ -46,6 +46,7 @@ const DEPLOYMENT_PARAM = {
         USDCAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
         maxLiquidateRate: 10000, // 100%
         initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
+        healthcareThresold: ethers.utils.parseUnits("0.95"),
         interestRate: {
             blocksPerYear: 365 * 24 * 60 * 60,
             baseRatePerYear: ethers.utils.parseEther("0.02"),
