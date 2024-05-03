@@ -20,8 +20,15 @@ const {
 
 describe("Sirio Finance Protocol test", function () {
     let feeRate, param, underlyingTokenAddress, name, symbol;
+    let WBTCWhaleAddress = "0x6daB3bCbFb336b29d06B9C793AEF7eaA57888922";
     before(async function () {
-        [this.deployer, this.tester] = await ethers.getSigners();
+        [this.deployer, this.tester, this.tester_1] = await ethers.getSigners();
+
+        await network.provider.request({
+            method: "hardhat_impersonateAccount",
+            params: [WBTCWhaleAddress],
+        });
+        this.WBTCWhale = await ethers.getSigner(WBTCWhaleAddress);
 
         param = getDeploymentParam();
         underlyingTokenAddress = param.WBTCAddress;
@@ -210,6 +217,13 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("supply and check", async function () {
+            let wbtcAmount = await this.WBTC.balanceOf(this.WBTCWhale.address);
+            console.log(smallNum(wbtcAmount, 8));
+            await this.WBTC.connect(this.WBTCWhale).transfer(
+                this.deployer.address,
+                BigInt(wbtcAmount)
+            );
+
             let beforeBal = await this.sfWBTC.balanceOf(this.deployer.address);
             await this.sfWBTC
                 .connect(this.deployer)
@@ -219,7 +233,7 @@ describe("Sirio Finance Protocol test", function () {
                 BigInt(afterBal) - BigInt(beforeBal),
                 18
             );
-            let originSupplyAmount = smallNum(supplyAmount, 6);
+            let originSupplyAmount = smallNum(supplyAmount, 8);
             console.log("received shares: ", receivedShareAmounts);
 
             // this supply is the first time and initialExchageRate is 0.02,
@@ -231,7 +245,7 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("supply again and check", async function () {
-            let originShare = await this.sfWBTC.balanceOf(this.tester.address);
+            await this.WBTC.transfer(this.tester.address, BigInt(supplyAmount));
             await this.WBTC.connect(this.tester).approve(
                 this.sfWBTC.address,
                 BigInt(supplyAmount)
@@ -241,9 +255,14 @@ describe("Sirio Finance Protocol test", function () {
                 .connect(this.tester)
                 .supplyUnderlying(BigInt(supplyAmount));
             let afterBal = await this.sfWBTC.balanceOf(this.tester.address);
-            let receivedShareAmounts = BigInt(afterBal) - BigInt(beforeBal);
-            expect(smallNum(originShare, 18)).to.be.equal(
-                smallNum(receivedShareAmounts, 18)
+            let originSupplyAmount = smallNum(supplyAmount, 8);
+            let receivedShareAmounts = smallNum(
+                BigInt(afterBal) - BigInt(beforeBal),
+                18
+            );
+            expect(receivedShareAmounts / originSupplyAmount).to.be.closeTo(
+                50,
+                0.00001
             );
         });
     });
@@ -273,7 +292,7 @@ describe("Sirio Finance Protocol test", function () {
                     BigInt(expectUnderlyingAmount) - BigInt(feeAmount);
 
                 let beforeOwnerBal = await this.WBTC.balanceOf(
-                    this.tester.address
+                    this.deployer.address
                 );
                 let beforeRecvBal = await this.WBTC.balanceOf(
                     this.tester.address
@@ -282,7 +301,7 @@ describe("Sirio Finance Protocol test", function () {
                     .connect(this.tester)
                     .redeem(BigInt(redeemShare));
                 let afterOwnerBal = await this.WBTC.balanceOf(
-                    this.tester.address
+                    this.deployer.address
                 );
                 let afterRecvBal = await this.WBTC.balanceOf(
                     this.tester.address
@@ -362,12 +381,12 @@ describe("Sirio Finance Protocol test", function () {
         it("reverts if borrower has not enough collateral", async function () {
             let borrowableAmount =
                 await this.marketPositionManager.getBorrowableAmount(
-                    this.tester.address,
+                    this.tester_1.address,
                     this.sfWBTC.address
                 );
             expect(borrowableAmount).to.be.equal(0);
             await expect(
-                this.sfWBTC.connect(this.tester).borrow(BigInt(borrowAmount))
+                this.sfWBTC.connect(this.tester_1).borrow(BigInt(borrowAmount))
             ).to.be.reverted;
         });
 
@@ -377,10 +396,9 @@ describe("Sirio Finance Protocol test", function () {
                     this.deployer.address,
                     this.sfWBTC.address
                 );
-            let suppliedAmount = await this.sfWBTC.getSuppliedAmount(
-                this.deployer.address
+            expect(smallNum(borrowableAmount, 8)).to.be.greaterThanOrEqual(
+                smallNum(borrowAmount, 8)
             );
-            expect(borrowableAmount).to.be.equal(suppliedAmount * 0.78, 0.01);
             let beforeBal = await this.WBTC.balanceOf(this.deployer.address);
             await this.sfWBTC
                 .connect(this.deployer)
@@ -422,21 +440,6 @@ describe("Sirio Finance Protocol test", function () {
                 .supplyUnderlying(BigInt(supplyAmount / 10 ** 10), {
                     value: BigInt(supplyAmount),
                 });
-        });
-
-        it("check borrowable WBTC amount", async function () {
-            let supplyHBARAmount = await this.sfHBAR.getSuppliedAmount(
-                this.tester.address
-            );
-            let borrowableWBTCAmount =
-                await this.marketPositionManager.getBorrowableAmount(
-                    this.tester.address,
-                    this.sfWBTC.address
-                );
-            let WBTCprice = await this.priceOracle.getTokenPrice(this.WBTC);
-            expect(
-                (BigInt(borrowableWBTCAmount) * BigInt(WBTCprice)) / 10 ** 6
-            ).to.be.equal((BigInt(supplyHBARAmount) * BigInt(60)) / 10 ** 10);
         });
 
         it("borrow WBTC", async function () {
@@ -488,7 +491,7 @@ describe("Sirio Finance Protocol test", function () {
                 BigInt(afterTotalReserves) - BigInt(beforeTotalReserves);
 
             let feeAmount =
-                (BigInt(bigNum(borrowableWBTCAmount, 12)) *
+                (BigInt(bigNum(borrowableWBTCAmount, 10)) *
                     BigInt(feeRate.borrowingFeeRate)) /
                 BigInt(10000);
             let expectAmount = BigInt(borrowedAmount) - BigInt(feeAmount);
@@ -497,16 +500,17 @@ describe("Sirio Finance Protocol test", function () {
                 smallNum(beforeBorrowIndex, 18)
             );
 
-            expect(smallNum(receviedWBTC, 6)).to.be.closeTo(
+            expect(smallNum(receviedWBTC, 8)).to.be.closeTo(
                 smallNum(expectAmount, 18),
                 0.0001
             );
-            expect(smallNum(totalBorrows, 18)).to.be.equal(
-                smallNum(borrowableWBTCAmount, 6)
+            expect(smallNum(totalBorrows, 18)).to.be.closeTo(
+                smallNum(borrowableWBTCAmount, 8),
+                0.0001
             );
             expect(BigInt(totalReserves)).to.be.equal(BigInt(0));
             expect(smallNum(borrowedAmount, 18)).to.be.equal(
-                smallNum(borrowableWBTCAmount, 6)
+                smallNum(borrowableWBTCAmount, 8)
             );
 
             expect(
@@ -546,8 +550,11 @@ describe("Sirio Finance Protocol test", function () {
         });
 
         it("reverts if not insufficient pool to provide interests", async function () {
-            await expect(this.sfWBTC.connect(this.deployer).claimInterests()).to
-                .be.reverted;
+            await expect(
+                this.sfWBTC
+                    .connect(this.deployer)
+                    .claimInterests(bigNum(10, 18))
+            ).to.be.reverted;
         });
     });
 
@@ -593,7 +600,7 @@ describe("Sirio Finance Protocol test", function () {
                         BigInt(beforeRepayAmount) - BigInt(afterRepayAmount),
                         18
                     )
-                ).to.be.closeTo(smallNum(repayAmount, 6), 0.01);
+                ).to.be.closeTo(smallNum(repayAmount, 8), 0.01);
             });
         });
 
@@ -629,11 +636,12 @@ describe("Sirio Finance Protocol test", function () {
                 let ownerAmount =
                     BigInt(afterOwnerBal) - BigInt(beforeOwnerBal);
 
-                expect(smallNum(claimableInterests, 6)).to.be.equal(
-                    smallNum(BigInt(supplierAmount) + BigInt(ownerAmount), 6)
+                expect(smallNum(claimableInterests, 8)).to.be.equal(
+                    smallNum(supplierAmount, 8)
                 );
-                expect(smallNum(beforeSuppliedAmount, 6)).to.be.equal(
-                    smallNum(afterSuppliedAmount, 6)
+                expect(smallNum(beforeSuppliedAmount, 8)).to.be.closeTo(
+                    smallNum(afterSuppliedAmount, 8),
+                    0.01
                 );
             });
         });

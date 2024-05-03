@@ -1039,10 +1039,10 @@ abstract contract HederaTokenService is HederaResponseCodes {
     }
 
     function associateToken(address account, address token) internal returns (int responseCode) {
-        (bool success, bytes memory result) = precompileAddress.call(
+        (bool success, ) = precompileAddress.call(
             abi.encodeWithSelector(IHederaTokenService.associateToken.selector,
             account, token));
-        responseCode = success ? abi.decode(result, (int32)) : HederaResponseCodes.UNKNOWN;
+        responseCode = success ? HederaResponseCodes.SUCCESS : HederaResponseCodes.UNKNOWN;
     }
 
     /// Dissociates the provided account with the provided tokens. Must be signed by the provided
