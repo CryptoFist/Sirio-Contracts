@@ -1,6 +1,6 @@
 {
   "hederaRpcUrl": "https://testnet.hashio.io/api",
-  "OperatorPrivatKey": "privatKey",
+  "OperatorPrivatKey": "privateKey",
   "sFProtocolContract": "0xb25a44Aa6aE2e3B1018E5902229a14FA5D8808d2",
   "marketPositionManager": "0xdAfFdE0c18766FD6433859A4c97dAA5c8460cF95",
 
@@ -11,8 +11,13 @@
   },
 
   "positionManager": {
-    "addresses": ["0x0000000000000000000000000000000000226dec"],
-    "borrowCap": [145],
-    "liquidateRate": 175
+    "runBorrowCap": true,
+    "runLiquidationRate": true,
+    "addresses": [
+      "0x0000000000000000000000000000000000226dec",
+      "0x0000000000000000000000000000000000226df2"
+    ],
+    "borrowCap": [400, 200],
+    "liquidateRate": 200
   }
 }

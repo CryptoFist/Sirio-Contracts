@@ -3,7 +3,6 @@ const { ethers: hardhatEthers } = require("hardhat");
 const parameterConfig = require("../parameterConfig.json");
 const ethers = require("ethers");
 const SFPProtocolTokenABI = require("../internal_abi/SFProtocolToken.json");
-// const marketPositionManagerABI = require("../internal_abi/MarketPositionManager.json");
 
 function checkFeeConfig(currentFeeRates, configFees) {
   const updatedFeeRates = [
@@ -24,16 +23,15 @@ function checkFeeConfig(currentFeeRates, configFees) {
 async function feeAdjustment() {
   const configFees = parameterConfig.fees;
   const network = parameterConfig.hederaRpcUrl;
-  const address = parameterConfig.OperatorPrivatKey;
+  const privateKey = parameterConfig.OperatorPrivatKey;
   const sfProtocolContract = parameterConfig.sFProtocolContract;
   const positionManagerContract = parameterConfig.marketPositionManager;
-  const borrowCap = parameterConfig.positionManager;
-  const liquidateRate = parameterConfig.positionManager;
-  const redeem = configFees.redeemingFeeRate;
+  const positionManagerConfig = parameterConfig.positionManager;
+  const configBorrowCaps = parameterConfig.positionManager.borrowCap;
 
   const client = new ethers.providers.JsonRpcProvider(network);
 
-  const wallet = new ethers.Wallet(address, client);
+  const wallet = new ethers.Wallet(privateKey, client);
 
   // connection to the SFProtocolToken smart contract
   const sFProtocolContract = new ethers.Contract(
@@ -50,30 +48,44 @@ async function feeAdjustment() {
   );
 
   const feeRate = await sFProtocolContract.feeRate();
-  console.log("this is the Fee Rate which is currently beeing used", feeRate);
+  console.log(
+    "this is the Fee Rate which is currently beeing used\n",
+    `Borrowing feeRate: ${configFees.borrowingFeeRate} \n Redeem feeRate: ${configFees.redeemingFeeRate}\n claiming feeRate: ${configFees.claimingFeeRate}`
+  );
 
   const updatedFees = checkFeeConfig(feeRate, configFees);
   console.log("here we are updating the fee Rate", updatedFees);
 
-  const setFeeRate = await sFProtocolContract.setFeeRate(updatedFees);
-  console.log(" setting the new feeRate:", setFeeRate);
+  await sFProtocolContract.setFeeRate(updatedFees);
 
   const feeRateAfter = await sFProtocolContract.feeRate();
   console.log(
     "Double checking that the feeRate has been changed",
     feeRateAfter
   );
-
-  const setBorrowCap = await marketManager.setBorrowCaps(
-    ["0x0000000000000000000000000000000000226dec"],
-    [borrowCap.borrowCap]
-  );
-  console.log("here we can set the borrowing cap", setBorrowCap);
-
-  const setMaxLiquidateRate = await marketManager.setMaxLiquidateRate(
-    liquidateRate.liquidateRate
-  );
-  console.log("setting the max LiquidateRate", setMaxLiquidateRate);
+  if (parameterConfig.positionManager.runBorrowCap) {
+    await marketManager.setBorrowCaps(
+      positionManagerConfig.addresses,
+      configBorrowCaps
+    );
+    for (let i = 0; i < positionManagerConfig.addresses.length; i++) {
+      const getBorrowCap = await marketManager.borrowCaps(
+        positionManagerConfig.addresses[i]
+      );
+      console.log(
+        `token address: ${positionManagerConfig.addresses[i]} new value is set to ${getBorrowCap}`
+      );
+    }
+  }
+  if (positionManagerConfig.runLiquidationRate) {
+    const getLiquidationRate = await marketManager.maxLiquidateRate();
+    console.log("current Liquidation Rate", getLiquidationRate);
+    await marketManager.setMaxLiquidateRate(
+      positionManagerConfig.liquidateRate
+    );
+    const updateLiquidationRate = await marketManager.maxLiquidateRate();
+    console.log("updated liquidation Rate", updateLiquidationRate);
+  }
 }
 
 feeAdjustment().catch((error) => {
