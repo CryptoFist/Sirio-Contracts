@@ -28,6 +28,7 @@ async function feeAdjustment() {
   const sfProtocolContract = parameterConfig.sFProtocolContract;
   const positionManagerContract = parameterConfig.marketPositionManager;
   const borrowCap = parameterConfig.positionManager;
+  const liquidateRate = parameterConfig.positionManager;
   const redeem = configFees.redeemingFeeRate;
 
   const client = new ethers.providers.JsonRpcProvider(network);
@@ -48,12 +49,6 @@ async function feeAdjustment() {
     wallet
   );
 
-  // const martketProtocolContract = new ethers.Contract(
-  //   smartContract.marketPositionManager,
-  //   marketPositionManagerABI,
-  //   wallet
-  // );
-
   const feeRate = await sFProtocolContract.feeRate();
   console.log("this is the Fee Rate which is currently beeing used", feeRate);
 
@@ -69,14 +64,16 @@ async function feeAdjustment() {
     feeRateAfter
   );
 
-  // const setBorrowCap = await marketManager.setBorrowCaps(
-  //   ["fad9d6ddc2f5e908b2bdb683728dc83b721d355e4e46fd798d2f2b8e687164ff"],
-  //   [300]
-  // );
-  // console.log("here we can set the borrowing cap", setBorrowCap);
+  const setBorrowCap = await marketManager.setBorrowCaps(
+    ["0x0000000000000000000000000000000000226dec"],
+    [borrowCap.borrowCap]
+  );
+  console.log("here we can set the borrowing cap", setBorrowCap);
 
-  // const setMaxLiquidateRate = await marketManager.setMaxLiquidateRate(175);
-  // console.log("setting the max LiquidateRate", setMaxLiquidateRate);
+  const setMaxLiquidateRate = await marketManager.setMaxLiquidateRate(
+    liquidateRate.liquidateRate
+  );
+  console.log("setting the max LiquidateRate", setMaxLiquidateRate);
 }
 
 feeAdjustment().catch((error) => {
