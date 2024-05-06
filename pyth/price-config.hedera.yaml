@@ -1,0 +1,32 @@
+- alias: HBAR/USD
+  id: "0x3728e591097635310e6341af53db8b7ee42da9b3a8d918f9463ce9cca886dfbd"
+  time_difference: 60
+  price_deviation: 0.5
+  confidence_ratio: 1
+- alias: BTC/USD
+  id: "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+  time_difference: 60
+  price_deviation: 1
+  confidence_ratio: 1
+  early_update:
+    time_difference: 30
+    price_deviation: 0.5
+    confidence_ratio: 0.1
+- alias: ETH/USD
+  id: "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"
+  time_difference: 60
+  price_deviation: 1
+  confidence_ratio: 1
+  early_update:
+    time_difference: 30
+    price_deviation: 0.5
+    confidence_ratio: 0.1
+- alias: XRP/USD
+  id: "0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eea1c8"
+  time_difference: 60
+  price_deviation: 1
+  confidence_ratio: 1
+  early_update:
+    time_difference: 30
+    price_deviation: 0.5
+    confidence_ratio: 0.1

@@ -4,7 +4,7 @@ import "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
 import "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
 
 contract PythOracle {
-    IPyth public pyth;
+    IPyth pyth;
 
     constructor(address pythContract) {
         pyth = IPyth(pythContract);
@@ -25,13 +25,12 @@ contract PythOracle {
         return hbarPrice8Decimals;
     }
 
-    function getPriceDollar(bytes32 _pricePair) public view returns (uint) {
+    function getPriceInDollar(bytes32 _pricePair) public view returns (uint) {
         PythStructs.Price memory pythPrice = pyth.getPrice(_pricePair);
 
-        uint hbarPrice8Decimals = (uint(uint64(pythPrice.price)) * (10 ** 8)) /
+        uint hbarPrice8Decimals = (uint(uint64(pythPrice.price))) /
             (10 ** uint8(uint32(-1 * pythPrice.expo)));
-        uint oneDollarInHbar = ((10 ** 8) * (10 ** 8)) / hbarPrice8Decimals;
 
-        return oneDollarInHbar;
+        return hbarPrice8Decimals;
     }
 }

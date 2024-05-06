@@ -27,6 +27,7 @@ const DEPLOYMENT_PARAM = {
         HBAR : "0x0000000000000000000000000000000000003aD2",
         HBARX : "0x0000000000000000000000000000000000226dff",
         HSUITE: "0x0000000000000000000000000000000000219d8e",
+        MNKY: "0x00000000000000000000000000000000004198fd",
         maxLiquidateRate: 10000, // 100%
         initialExchangeRateMantissa: ethers.utils.parseUnits("0.02"),
         healthcareThresold:ethers.utils.parseUnits("0.95"),
@@ -38,6 +39,9 @@ const DEPLOYMENT_PARAM = {
             kink: ethers.utils.parseEther("0.8"),
             name: "MediumRateModel",
         },
+        supraPullOracle: "0x6bf7b21145Cbd7BB0b9916E6eB24EDA8A675D7C0",
+        supraStorageOracle: "0x6Cd59830AAD978446e6cc7f6cc173aF7656Fb917",
+        pythOracleContract: "0xA2aa501b19aff244D90cc15a4Cf739D2725B5729"
     },
     hardhat: {
         dexRouterV2Address: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",

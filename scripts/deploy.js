@@ -13,8 +13,8 @@ async function main() {
 
   const feeRate = {
     borrowingFeeRate: 100, // 1%
-    redeemingFeeRate: 100, // 2%
-    claimingFeeRate: 50, // 1.5%
+    redeemingFeeRate: 200, // 2%
+    claimingFeeRate: 50, // 0.5%
   };
 
   const interestRateModel = await deploy(
@@ -35,6 +35,12 @@ async function main() {
     param.HBAR,
     param.dexRouterV2Address
   );
+
+  const pythOracle = await deploy(
+    "PythOracle",
+    "PythOracle",
+    param.pythOracleContract
+  )
 
   const nft = await deploy("NftToken", "NftToken", deployer.address);
 
@@ -132,6 +138,10 @@ async function main() {
     "hsuitel"
   );
 
+
+
+
+
   console.log("Deployed successfully!");
 
   const marketManager = await ethers.getContractAt(
@@ -146,6 +156,8 @@ async function main() {
   await marketManager.addToMarket(HBARlending.address);
   await marketManager.addToMarket(HBARXlending.address);
   await marketManager.addToMarket(HSUITELending.address);
+  
+
 
   await marketManager.setBorrowCaps(
     [
@@ -193,6 +205,7 @@ async function main() {
     deployer
   );
   await hsuitelendingContract.tokenAssociate(param.HSUITE);
+
   console.log("setting environment successfully!");
 }
 
@@ -202,3 +215,5 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+

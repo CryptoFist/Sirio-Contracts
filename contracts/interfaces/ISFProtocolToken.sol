@@ -90,6 +90,14 @@ interface ISFProtocolToken {
         uint256 _repayAmount
     ) external;
 
+    /// @notice removeBorrow remove borrow instead of borrower.
+    /// @param _borrower The address of borrower.
+    /// @param _amount The amount of asset to remove borrow.
+    function removeBorrow(
+        address _borrower, 
+        uint256 _amount
+    ) external;
+
     /// @notice Transfers collateral tokens (this market) to the liquidator.
     /// @dev Will fail unless called by another cToken during the process of liquidation.
     ///  Its absolutely critical to use msg.sender as the borrowed cToken and not a parameter.
